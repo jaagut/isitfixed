@@ -344,3 +344,13 @@ def test_progressive_sources_publish_before_slow_vendor(tmp_path):
         assert 'ubuntu' not in snapshots[0]['vendorData']['sources']
         cache.close()
     asyncio.run(check())
+
+
+def test_case_links_serve_the_app_and_other_paths_stay_private(setup):
+    clock, providers, path = setup
+    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+        for url in ("/CVE-2024-3094", "/cve-2024-3094"):
+            response = client.get(url)
+            assert response.status_code == 200 and "<script" in response.text
+        for url in ("/cache.sqlite3", "/backend", "/CVE-2024-3094.json"):
+            assert client.get(url).status_code == 404

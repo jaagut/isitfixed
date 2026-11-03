@@ -3,11 +3,12 @@
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#173c32"><title>CVE Desk — your vulnerability workspace</title><link rel="stylesheet" href="style.css"></head>
 <body>
 <aside class="sidebar">
-  <a class="brand" href="./"><span class="brand-icon">c/</span> CVE Desk<span class="local-tag">LOCAL</span></a>
+  <a class="brand" href="/"><span class="brand-icon">c/</span> CVE Desk</a>
   <button id="new-case" class="primary full">＋ Open a case <kbd>N</kbd></button>
   <label class="search"><span>⌕</span><input id="search" placeholder="Find a case…" aria-label="Find a case"></label>
   <div class="sidebar-label">YOUR CASES <span id="case-count">0</span></div>
   <nav id="case-list" aria-label="Saved cases"></nav>
+  <nav id="archived-list" aria-label="Archived cases" hidden></nav>
   <div class="sidebar-bottom"><button id="settings-button">⚙ Settings</button><p><span class="dot safe"></span> Cases stored on this device</p></div>
   <div id="sidebar-resize" role="separator" aria-label="Sidebar width" aria-orientation="vertical" aria-valuemin="220" aria-valuemax="480" aria-valuenow="265" tabindex="0" title="Drag to resize; arrow keys adjust width"></div>
 </aside>
@@ -15,8 +16,8 @@
   <main id="main"></main>
 
 </div>
-<dialog id="add-dialog"><form id="add-form"><div class="dialog-heading"><h2>Open a case</h2><button type="button" data-close="add-dialog" aria-label="Close">×</button></div><p>One vulnerability. Just the products you care about.</p><label>CVE identifier<input id="cve-input" placeholder="CVE-2024-3094" required pattern="[Cc][Vv][Ee]-[0-9]{4}-[0-9]{4,}" autocomplete="off"></label><p id="add-error" class="error" role="alert"></p><button class="primary full" type="submit">Open case →</button></form></dialog>
-<dialog id="settings-dialog"><div class="dialog-heading"><h2>Settings</h2><button data-close="settings-dialog" aria-label="Close">×</button></div><p>Default products for new cases. Each case can have its own selection.</p><h3>OS order</h3><div id="os-order"></div><h3>Default versions</h3><div id="default-products" class="product-choices"></div><hr><label class="toggle"><input type="checkbox" id="auto-refresh"> Check for case updates every hour while open</label><button id="notifications">Enable desktop notifications</button><p class="muted">Updated cases move to the top of the sidebar with a New indicator. Browser notifications require permission and HTTPS or localhost.</p><hr><div class="actions"><button id="export">Export workspace ↓</button><label class="button">Restore backup ↑<input id="restore" type="file" accept="application/json,.json" hidden></label></div><p class="muted">Backups include cases, source snapshots, product choices. Browser storage can be cleared; export a backup to keep a copy.</p></dialog>
+<dialog id="add-dialog"><form id="add-form"><div class="dialog-heading"><h2>Open a case</h2><button type="button" data-close="add-dialog" aria-label="Close">×</button></div><p>One vulnerability. Just the products you care about. Shortcut: N or Ctrl+K.</p><label>CVE ID or link<input id="cve-input" placeholder="CVE-2024-3094 or a URL that contains it" required autocomplete="off" spellcheck="false"></label><p id="add-error" class="error" role="alert"></p><button class="primary full" type="submit">Open case →</button></form></dialog>
+<dialog id="settings-dialog"><div class="dialog-heading"><h2>Settings</h2><button data-close="settings-dialog" aria-label="Close">×</button></div><h3>Operating systems</h3><p class="settings-hint">Drag to set the order cases use. Selected versions are the defaults for new cases; each case can change its own selection.</p><div id="default-products" class="product-choices sortable"></div><hr><h3>Severity</h3><label class="select-row">Score shown for cases <select id="cvss-version"></select></label><p class="settings-hint">If a CVE has no score in this version, the next available version is shown and labelled.</p><hr><label class="toggle"><input type="checkbox" id="auto-refresh"> Check for case updates every hour while open</label><button id="notifications">Enable desktop notifications</button><p class="muted">Updated cases move to the top of the sidebar with a New indicator. Browser notifications require permission and HTTPS or localhost.</p><hr><div class="actions"><button id="export">Export workspace ↓</button><label class="button">Restore backup ↑<input id="restore" type="file" accept="application/json,.json" hidden></label></div><p class="muted">Backups include cases, source snapshots, product choices. Browser storage can be cleared; export a backup to keep a copy.</p></dialog>
 <div id="toast" role="status" aria-live="polite"></div>
 <script type="module" src="src/app.js"></script>
 </body></html>

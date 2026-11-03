@@ -39,3 +39,31 @@ test('end-of-life Debian 11 is not offered and is dropped from saved selections'
   assert.ok(!PRODUCTS.some(p=>p.id==='debian11'));
   assert.deepEqual(migrateProducts(['debian11','debian12']),['debian12']);
 });
+import {extractCveIds,groupFixes} from '../src/data.js';
+test('CVE IDs are found in any text, case-insensitively',()=>{
+  assert.deepEqual(extractCveIds('https://access.redhat.com/security/cve/cve-2024-1086'),['CVE-2024-1086']);
+  assert.deepEqual(extractCveIds('see CVE_2023_4863 and cve-2024-1086, CVE-2023-4863'),['CVE-2023-4863','CVE-2024-1086']);
+  assert.deepEqual(extractCveIds('no id here'),[]);
+});
+test('fixed packages are grouped by build',()=>{
+  const g=groupFixes(['kernel-5.14.0-687.64.1.el9_8','kernel-64k-5.14.0-687.64.1.el9_8','linux 6.12.113-1']);
+  assert.deepEqual(g.map(x=>[x.main,x.version,x.packages.length]),[['kernel','5.14.0-687.64.1.el9_8',2],['linux','6.12.113-1',1]]);
+});
+test('Microsoft ranges end at the fixed build; Defender applies to Windows; unlisted Windows is not affected',()=>{
+  const win=PRODUCTS.find(p=>p.id==='windows11');
+  const ms=affected=>({cveMetadata:{cveId:'CVE-2024-21338'},containers:{cna:{providerMetadata:{shortName:'microsoft'},affected}}});
+  const a=assess(ms([{product:'Windows 11 Version 23H2',versions:[{version:'10.0.22631.0',lessThan:'10.0.22631.3155',status:'affected',versionType:'custom'}]}]),win);
+  assert.deepEqual(a.evidence[0].fix,['Windows 11 Version 23H2 10.0.22631.3155']);assert.equal(a.fixAvailable,true);
+  const d=assess(ms([{product:'Microsoft Malware Protection Engine',versions:[{version:'1.1.0.0',lessThan:'1.1.26060.3008',status:'affected'}]}]),win);
+  assert.equal(d.fixAvailable,true);assert.match(d.evidence[0].note,/Defender/);
+  assert.equal(assess(ms([{product:'Microsoft Outlook 2016',versions:[{version:'16.0.0',lessThan:'16.0.5456',status:'affected'}]}]),win).status,'unaffected');
+  // Other CNAs: ranges are not treated as fixes.
+  assert.deepEqual(assess(record([{product:'Windows 11',versions:[{version:'1',lessThan:'2',status:'affected'}]}]),win).evidence[0].fix,[]);
+});
+test('CVSS uses the preferred version and falls back',()=>{
+  const r={cveMetadata:{cveId:'CVE-2024-1',datePublished:'2024-01-02T00:00:00'},containers:{cna:{metrics:[{cvssV4_0:{baseScore:9.3,baseSeverity:'CRITICAL'}},{cvssV3_1:{baseScore:7.8,baseSeverity:'HIGH'}}]},adp:[{metrics:[{cvssV2_0:{baseScore:5}}]}]}};
+  assert.deepEqual([summary(r).score,summary(r).cvssVersion],[7.8,'3.1']);
+  assert.deepEqual([summary(r,'4.0').score,summary(r,'4.0').cvssVersion],[9.3,'4.0']);
+  assert.deepEqual([summary(r,'2.0').score,summary(r,'2.0').severity],[5,'MEDIUM']);
+  assert.equal(summary(r).published,'2024-01-02T00:00:00');
+});

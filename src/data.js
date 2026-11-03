@@ -6,6 +6,7 @@ export const VENDORS = [
   {id:'ubuntu',name:'Ubuntu',vendor:'Canonical',logo:'ubuntu'},
   {id:'alpine',name:'Alpine Linux',vendor:'Alpine',logo:'alpinelinux'},
 ];
+const DEFENDER=/malware protection engine|microsoft defender|antimalware platform/i;
 export const PRODUCTS = [
   ...[8,9,10].map(v=>({id:`rhel${v}`,family:'rhel',name:`RHEL ${v}`,version:String(v),vendor:'Red Hat',match:new RegExp(`\\bred hat enterprise linux(?: ${v}\\b|[^()]*\\(v\\. ${v}\\))`,'i')})),
   ...[[12,'Bookworm'],[13,'Trixie']].map(([v,code])=>({id:`debian${v}`,family:'debian',name:`Debian ${v} · ${code}`,version:`${v} · ${code}`,code:code.toLowerCase(),vendor:'Debian',match:new RegExp(`\\bdebian.*(?:${code}|${v}\\b)`,'i')})),
@@ -30,26 +31,44 @@ function shortTitle(text) {
   const sentence=text.trim().split(/(?<=[.!?])\s/)[0].replace(/[.!?]$/,'');
   return sentence.length>90?`${sentence.slice(0,sentence.lastIndexOf(' ',87)>40?sentence.lastIndexOf(' ',87):87)}…`:sentence;
 }
-export function summary(record) {
+export const CVSS_VERSIONS=['3.1','4.0','3.0','2.0'];
+const CVSS_KEYS={'4.0':'cvssV4_0','3.1':'cvssV3_1','3.0':'cvssV3_0','2.0':'cvssV2_0'};
+const severityOf=score=>score==null?'Unrated':score>=9?'CRITICAL':score>=7?'HIGH':score>=4?'MEDIUM':score>0?'LOW':'NONE';
+// Uses the preferred CVSS version and falls back to the others (3.1, 3.0, 4.0, 2.0).
+export function summary(record, preferred='3.1') {
   const cna=record?.containers?.cna || {};
   const containers=[cna,...(record?.containers?.adp || [])];
-  const metric=containers.flatMap(c=>c.metrics || []).flatMap(m=>[m.cvssV4_0,m.cvssV3_1,m.cvssV3_0,m.cvssV2_0]).find(Boolean);
+  const metrics=containers.flatMap(c=>c.metrics || []);
+  let metric,cvssVersion;
+  for(const v of [...new Set([preferred,'3.1','3.0','4.0','2.0'])]){metric=metrics.map(m=>m[CVSS_KEYS[v]]).find(Boolean);if(metric){cvssVersion=v;break;}}
+  if(metric&&!metric.baseSeverity)metric={...metric,baseSeverity:severityOf(metric.baseScore)};
   const description=cna.descriptions?.find(d=>d.lang?.startsWith('en'))?.value;
   const rejected=record?.cveMetadata?.state==='REJECTED';
-  return { title:cna.title || (rejected?'Rejected CVE':description?shortTitle(description):'Awaiting source data'), description:description || 'No English description published.', score:metric?.baseScore, severity:metric?.baseSeverity || 'Unrated', vector:metric?.vectorString || '', category:cna.problemTypes?.flatMap(p=>p.descriptions || []).find(d=>d.lang==='en')?.description || 'Category not published', rejected };
+  return { title:cna.title || (rejected?'Rejected CVE':description?shortTitle(description):'Awaiting source data'), description:description || 'No English description published.', score:metric?.baseScore, severity:metric?.baseSeverity || 'Unrated', cvssVersion, vector:metric?.vectorString || '', published:record?.cveMetadata?.datePublished, updated:record?.cveMetadata?.dateUpdated, category:cna.problemTypes?.flatMap(p=>p.descriptions || []).find(d=>d.lang==='en')?.description || 'Category not published', rejected };
 }
 const range=v=>`${v.version || 'Unspecified'}${v.lessThan ? ` to < ${v.lessThan}` : v.lessThanOrEqual ? ` to ≤ ${v.lessThanOrEqual}` : ''}${v.changes?.length ? ` (status changes: ${v.changes.map(c=>`${c.at}: ${c.status}`).join(', ')})` : ''}`;
 export function assess(record, product, vex, vendorData) {
   const cna=record?.containers?.cna;
-  const entries=(cna?.affected || []).filter(a=>product.match.test(a.product || a.packageName || ''));
+  // Microsoft records list every affected product, and each range ends at the
+  // first fixed build ("lessThan"), published on the day the update ships.
+  const microsoft=cna?.providerMetadata?.shortName==='microsoft'&&product.family==='windows';
+  let entries=(cna?.affected || []).filter(a=>product.match.test(a.product || a.packageName || ''));
+  let note='';
+  if(microsoft&&!entries.length){
+    // Defender ships with every supported Windows release but updates separately.
+    entries=(cna.affected || []).filter(a=>DEFENDER.test(a.product || ''));
+    if(entries.length)note='Microsoft Defender component on this Windows version; it updates separately from Windows.';
+  }
   let evidence=entries.map(a=>{
     const versions=a.versions || [];
     const affected=versions.filter(v=>v.status==='affected');
     const unaffected=versions.filter(v=>v.status==='unaffected');
-    // Unaffected ranges are not necessarily fixes; never infer a fixed release.
+    // Other vendors' unaffected ranges are not necessarily fixes; never infer a fixed release.
     const status=affected.length || a.defaultStatus==='affected'?'affected':versions.some(v=>v.status==='unknown')?'unknown':a.defaultStatus==='unaffected' && !versions.length?'unaffected':'unknown';
-    return {name:a.packageName || a.product,status,affected:affected.map(range),unaffected:unaffected.map(range),fix:[],mitigation:[]};
+    const fix=microsoft?affected.filter(v=>v.lessThan).map(v=>`${a.product} ${v.lessThan}`):[];
+    return {name:a.packageName || a.product,status,affected:affected.map(range),unaffected:unaffected.map(range),fix,mitigation:[],...(note?{note}:{})};
   });
+  if(microsoft&&!evidence.length&&cna.affected?.length)evidence=[{name:product.name,status:'unaffected',affected:[],unaffected:[],fix:[],mitigation:[],note:`Not listed by Microsoft. Affected products: ${[...new Set(cna.affected.map(a=>a.product))].slice(0,4).join(', ')}.`}];
   const vendorEvidence=vendorData?.evidence?.[product.id];
   if(vendorEvidence?.length) evidence=vendorEvidence;
   if(vex) evidence=[...evidence,...assessVex(vex,record?.cveMetadata?.cveId,product)];
@@ -80,4 +99,71 @@ export function assessVex(doc,id,product,source='Imported VEX') {
     }
   }
   return result;
+}
+// TMDS Agent support: compare vendor kernel fixes with kernels bundled in the
+// Deep Security Agent package. Package versions and kernel release names use
+// different schemes per vendor, so each parser maps both to {branch, build}.
+// A bundled kernel supports the fix when it is the same branch and build >= fix.
+const ARCH=/_(?:x86_64|amd64|aarch64|arm64|ppc64le|s390x)$/;
+const nums=s=>String(s).split(/[._]/).filter(Boolean).map(Number);
+const dots=s=>s.replace(/_/g,'.');
+const ubuntuFlavor=(pkg,abi)=>abi>=1000?pkg.replace(/^linux-?/,'').split('-')[0]:'';
+const KERNELS={
+  rhel:{
+    fix:f=>{const m=f.match(/^kernel(?:-[a-z][a-z0-9_]*)*-(\d+\.\d+\.\d+)-(\d+(?:\.\d+)*)\.el(\d+(?:_\d+)?)$/);return m&&{branch:`el${m[3]}`,build:nums(`${m[1]}.${m[2]}`),label:`${m[1]}-${m[2]}.el${m[3]}`};},
+    vfs:k=>{const m=k.replace(ARCH,'').match(/^(\d+_\d+_\d+)_(\d+(?:_\d+)*)_el(\d+(?:_\d+)?)$/);return m&&{branch:`el${m[3]}`,build:nums(`${m[1]}_${m[2]}`),label:`${dots(m[1])}-${dots(m[2])}.el${m[3]}`};},
+  },
+  sles:{
+    // kernel-default-5.14.21-150500.55.195.1 runs as 5.14.21-150500.55.195-default.
+    fix:f=>{const m=f.match(/^kernel-([a-z0-9]+)(?:-[a-z]+)*-(\d+\.\d+\.\d+)-(\d{6})((?:\.\d+)+)$/);if(!m)return null;const flavor=['azure','rt'].includes(m[1])?m[1]:'default',build=nums(m[4]).slice(0,-1);return {branch:`${m[2]}-${m[3]} ${flavor}`,build,label:`${m[2]}-${m[3]}.${build.join('.')}-${flavor}`,optional:flavor!=='default'};},
+    vfs:k=>{const m=k.replace(ARCH,'').match(/^(\d+_\d+_\d+)_(\d{6})_(\d+(?:_\d+)*)_([a-z][a-z0-9]*)$/);return m&&{branch:`${dots(m[1])}-${m[2]} ${m[4]}`,build:nums(m[3]),label:`${dots(m[1])}-${m[2]}.${dots(m[3])}-${m[4]}`};},
+  },
+  ubuntu:{
+    // linux 5.15.0-130.140 runs as 5.15.0-130-generic; cloud kernels use ABI >= 1000.
+    fix:f=>{const m=f.match(/^(linux(?:-[a-z0-9.-]+)?) (\d+\.\d+\.\d+)-(\d+)\.\d+/);if(!m)return null;const flavor=ubuntuFlavor(m[1],+m[3]);return {branch:`${m[2]} ${flavor}`,build:[+m[3]],label:`${m[2]}-${m[3]}${flavor?`-${flavor}`:''}`,optional:Boolean(flavor)};},
+    vfs:k=>{const m=k.replace(ARCH,'').match(/^(\d+_\d+_\d+)_(\d+)_([a-z][a-z0-9_]*)$/);if(!m)return null;const flavor=+m[2]>=1000?m[3].split('_')[0]:'';return {branch:`${dots(m[1])} ${flavor}`,build:[+m[2]],label:`${dots(m[1])}-${m[2]}-${m[3].replace(/_/g,'-')}`};},
+  },
+  debian:{
+    // Only the 6.12+ scheme (6.12.113+deb13-amd64) carries the upstream version.
+    fix:f=>{const m=f.match(/^linux(?:-\d+\.\d+)? (\d+)\.(\d+)\.(\d+)-/);return m&&{branch:`${m[1]}.${m[2]}`,build:[+m[3]],label:`${m[1]}.${m[2]}.${m[3]}`};},
+    vfs:k=>{const m=k.match(/^(\d+)_(\d+)_(\d+)\+deb\d+/);return m&&{branch:`${m[1]}.${m[2]}`,build:[+m[3]],label:k.replace(ARCH,'').replace(/_(?=\d)/g,'.').replace(/_/g,'-')};},
+  },
+};
+const compareBuild=(a,b)=>{for(let i=0;i<Math.max(a.length,b.length);i++){const d=(a[i]??-1)-(b[i]??-1);if(d)return d;}return 0;};
+export const isKernelFix=f=>/^(?:kernel|linux)(?:-[a-z0-9_.]+)*[- ](?:0:)?\d+\.\d+\.\d+/.test(f);
+export function tmdsSupport(family,fixes,releases=[]){
+  const parse=KERNELS[family];
+  const bundled=releases.flatMap(r=>r.kernels.map(k=>({...(parse?.vfs(k)||{}),raw:k,release:r})));
+  if(!parse)return {status:'unknown',branches:[]};
+  const wanted=new Map();
+  for(const f of fixes){const k=parse.fix(f);if(k&&(!wanted.has(k.branch)||compareBuild(k.build,wanted.get(k.branch).build)<0))wanted.set(k.branch,k);}
+  const branches=[...wanted.values()].map(fix=>{
+    const same=bundled.filter(b=>b.branch===fix.branch).sort((a,b)=>compareBuild(a.build,b.build));
+    const ok=same.filter(b=>compareBuild(b.build,fix.build)>=0);
+    const pick=ok[0]||same.at(-1);
+    const arches=pick?[...new Set(same.filter(b=>b.label===pick.label).map(b=>b.release.architecture))]:[];
+    return {fix:fix.label,optional:fix.optional,status:ok.length?'supported':same.length?'pending':'unknown',kernel:pick?.label,exact:pick?compareBuild(pick.build,fix.build)===0:false,arches,release:pick?.release};
+  });
+  // Extra flavours TMDS does not bundle at all (raspi, rt, ibm…) are left out.
+  // For main kernels, unknown counts against "supported": no match is not proof of support.
+  const shown=branches.filter(b=>!(b.optional&&b.status==='unknown'));
+  if(!shown.length)return {status:branches.length?'none':'unknown',branches:[]};
+  const status=shown.every(b=>b.status==='unknown')?'unknown':shown.every(b=>b.status==='supported')?'supported':shown.some(b=>b.status==='supported')?'partial':'pending';
+  return {status,branches:shown};
+}
+// Accept any text that contains a CVE ID, such as an advisory URL; IDs are case-insensitive.
+export function extractCveIds(text){
+  return [...new Set([...String(text).matchAll(/cve[-_](\d{4})[-_](\d{4,})/gi)].map(m=>`CVE-${m[1]}-${m[2]}`))];
+}
+// Split "name version" (Debian/Ubuntu/Alpine), RPM "name-version-release" or "Windows product build".
+export function splitPackage(f){
+  const m=f.match(/^(\S+) (\S+)$/)||f.match(/^(.+?)-(\d[^-\s]*-[^-\s]+)$/)||f.match(/^(.+) (\d+(?:\.\d+){2,})$/);
+  return m?{name:m[1],version:m[2]}:{name:f,version:''};
+}
+// Group fixed packages that share a build (kernel, kernel-64k, kernel-core…).
+// The group's main package is the first one in the given ranking order.
+export function groupFixes(fixes){
+  const groups=new Map();
+  for(const f of fixes){const {name,version}=splitPackage(f),key=version||f;if(!groups.has(key))groups.set(key,{version,main:name,packages:[]});groups.get(key).packages.push(f);}
+  return [...groups.values()];
 }

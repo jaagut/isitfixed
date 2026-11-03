@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager, suppress
 import logging
 import json
 import os
+import re
 from pathlib import Path
 import time
 
@@ -180,6 +181,9 @@ class Watchlist(BaseModel):
     cases: list[Watch] = Field(max_length=1000)
 
 
+CASE_PATH = re.compile(r"cve[-_]\d{4}[-_]\d{4,}", re.IGNORECASE)
+
+
 def create_app(db_path=None, *, providers=None, clock=time.time, background=True, serve_frontend=True):
     @asynccontextmanager
     async def lifespan(app):
@@ -282,6 +286,13 @@ def create_app(db_path=None, *, providers=None, clock=time.time, background=True
         @app.get("/style.css", include_in_schema=False)
         async def style():
             return FileResponse(ROOT / "style.css", headers={"Cache-Control": "no-cache"})
+
+        # Case links such as /CVE-2024-3094 load the app, which opens that case.
+        @app.get("/{case_path}", include_in_schema=False)
+        async def case_page(case_path: str):
+            if not CASE_PATH.fullmatch(case_path):
+                raise HTTPException(404, "Not found")
+            return FileResponse(ROOT / "index.html", headers={"Cache-Control": "no-cache"})
 
         app.mount("/src", StaticFiles(directory=ROOT / "src"), name="src")
         app.mount("/assets", StaticFiles(directory=ROOT / "assets"), name="assets")
