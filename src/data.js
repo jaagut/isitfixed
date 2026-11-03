@@ -8,7 +8,7 @@ export const VENDORS = [
 ];
 export const PRODUCTS = [
   ...[8,9,10].map(v=>({id:`rhel${v}`,family:'rhel',name:`RHEL ${v}`,version:String(v),vendor:'Red Hat',match:new RegExp(`\\bred hat enterprise linux(?: ${v}\\b|[^()]*\\(v\\. ${v}\\))`,'i')})),
-  ...[[11,'Bullseye'],[12,'Bookworm'],[13,'Trixie']].map(([v,code])=>({id:`debian${v}`,family:'debian',name:`Debian ${v} · ${code}`,version:`${v} · ${code}`,code:code.toLowerCase(),vendor:'Debian',match:new RegExp(`\\bdebian.*(?:${code}|${v}\\b)`,'i')})),
+  ...[[12,'Bookworm'],[13,'Trixie']].map(([v,code])=>({id:`debian${v}`,family:'debian',name:`Debian ${v} · ${code}`,version:`${v} · ${code}`,code:code.toLowerCase(),vendor:'Debian',match:new RegExp(`\\bdebian.*(?:${code}|${v}\\b)`,'i')})),
   ...[15,16].map(v=>({id:`sles${v}`,family:'sles',name:`SLES ${v}`,version:String(v),vendor:'SUSE',match:new RegExp(`\\b(?:suse linux enterprise server|sles) ${v}\\b`,'i')})),
   ...[['windows10','10'],['windows11','11'],['server2022','Server 2022'],['server2025','Server 2025']].map(([id,v])=>({id,family:'windows',name:`Windows ${v}`,version:v,vendor:'Microsoft',match:new RegExp(`\\bwindows ${v}\\b`,'i')})),
   ...[['2004','20.04','focal'],['2204','22.04','jammy'],['2404','24.04','noble'],['2604','26.04','resolute']].map(([id,v,code])=>({id:`ubuntu${id}`,family:'ubuntu',name:`Ubuntu ${v} LTS`,version:`${v} LTS`,code,vendor:'Canonical',match:new RegExp(`\\bubuntu.*(?:${v.replace('.','\\.')}|${code})`,'i')})),
@@ -25,11 +25,18 @@ export function vendorURL(product,id) {
   if(product.family==='alpine') return `https://security.alpinelinux.org/vuln/${id}`;
   return `https://www.cve.org/CVERecord?id=${id}`;
 }
+// Records without a CNA title use the description's first sentence, kept short.
+function shortTitle(text) {
+  const sentence=text.trim().split(/(?<=[.!?])\s/)[0].replace(/[.!?]$/,'');
+  return sentence.length>90?`${sentence.slice(0,sentence.lastIndexOf(' ',87)>40?sentence.lastIndexOf(' ',87):87)}…`:sentence;
+}
 export function summary(record) {
   const cna=record?.containers?.cna || {};
   const containers=[cna,...(record?.containers?.adp || [])];
   const metric=containers.flatMap(c=>c.metrics || []).flatMap(m=>[m.cvssV4_0,m.cvssV3_1,m.cvssV3_0,m.cvssV2_0]).find(Boolean);
-  return { title:cna.title || record?.cveMetadata?.state || 'Awaiting source data', description:cna.descriptions?.find(d=>d.lang?.startsWith('en'))?.value || 'No English description published.', score:metric?.baseScore, severity:metric?.baseSeverity || 'Unrated', vector:metric?.vectorString || '', category:cna.problemTypes?.flatMap(p=>p.descriptions || []).find(d=>d.lang==='en')?.description || 'Category not published', rejected:record?.cveMetadata?.state==='REJECTED' };
+  const description=cna.descriptions?.find(d=>d.lang?.startsWith('en'))?.value;
+  const rejected=record?.cveMetadata?.state==='REJECTED';
+  return { title:cna.title || (rejected?'Rejected CVE':description?shortTitle(description):'Awaiting source data'), description:description || 'No English description published.', score:metric?.baseScore, severity:metric?.baseSeverity || 'Unrated', vector:metric?.vectorString || '', category:cna.problemTypes?.flatMap(p=>p.descriptions || []).find(d=>d.lang==='en')?.description || 'Category not published', rejected };
 }
 const range=v=>`${v.version || 'Unspecified'}${v.lessThan ? ` to < ${v.lessThan}` : v.lessThanOrEqual ? ` to ≤ ${v.lessThanOrEqual}` : ''}${v.changes?.length ? ` (status changes: ${v.changes.map(c=>`${c.at}: ${c.status}`).join(', ')})` : ''}`;
 export function assess(record, product, vex, vendorData) {

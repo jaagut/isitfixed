@@ -29,7 +29,7 @@ The `/data` volume holds the SQLite cache and watch registrations. Keep it acros
 
 The frontend can still be hosted separately. Set `API_BASE` in `src/config.js` to the backend URL, for example `https://cve-api.example.com/api`. Set `CORS_ORIGINS=https://cve.example.com` on the backend (comma-separated exact origins), and optionally `SERVE_FRONTEND=false`. A reverse proxy routing `/api` to FastAPI also works without changing `API_BASE`.
 
-Only explicit frontend directories/files are served; backend source, SQLite files, and repository contents are not exposed by a root static mount. The API fetches fixed official source URLs, not caller-supplied URLs. It has no user authentication; restrict access at your reverse proxy if this is a private deployment. It accepts up to 1,000 watched CVEs globally and keeps up to 1,000 cached CVEs.
+Only explicit frontend directories/files are served; backend source, SQLite files, and repository contents are not exposed by a root static mount. The API fetches fixed official source URLs, not caller-supplied URLs. It has no user authentication; restrict access at your reverse proxy if this is a private deployment. It accepts up to 1,000 watched CVEs globally and keeps up to 1,000 cached CVEs. When the cache is full, the least recently refreshed unwatched CVE is removed early; watched CVEs are never evicted. Lookups that return no CVE record and no vendor evidence are not stored, so unknown IDs cannot fill the cache. The frontend uses system fonts and loads no third-party assets.
 
 ## Watching, refreshing and retention
 
@@ -46,7 +46,9 @@ Saved browser cases register as watches under an anonymous workspace ID stored i
 
 The retention policy applies to backend cache data. Browser snapshots and exported backups persist until the user removes them. Operator-managed database backups and access logs require their own retention configuration. The SQLite connection uses secure deletion and a non-WAL journal to avoid keeping old cache contents in a persistent WAL file.
 
-Bulk Debian/Alpine documents are shared in server memory for at most an hour; only normalized per-CVE results are persisted. Source failures preserve prior evidence and its original timestamps, with explicit warnings. If a CVE record and all vendor evidence are unavailable, the API returns an error rather than a safe assessment.
+Bulk Debian/Alpine documents are shared in server memory for at most an hour; only normalized per-CVE results are persisted. Source failures preserve prior evidence and its original timestamps, with explicit warnings. If a CVE record and all vendor evidence are unavailable, the API returns an error rather than a safe assessment: 404 when the CVE Program has no such ID, 502 when sources failed.
+
+A vendor answering 404 for a per-CVE document (Red Hat, SUSE, Ubuntu) is reported as `notPublished` on that source, not as an outage; affected products stay **Needs review**. Each source has a time limit (30 seconds for per-CVE documents, 150 seconds for bulk feeds), so one slow vendor cannot hold up a response indefinitely. Selecting an additional vendor family fetches only that family and does not reset the hourly refresh clock.
 
 ## API
 
@@ -62,9 +64,9 @@ Case responses contain the CVE record, normalized `vendorData.evidence`, per-sou
 
 OS selection groups Red Hat, Debian, SUSE, Microsoft, Ubuntu and Alpine with logos and explicit versions. Missing evidence is **Needs review**, never “not affected.” Distribution status is not inferred from upstream package status. Unaffected version ranges are not inferred to be fixed releases. **Fix available** highlights a published fix without claiming it is installed or that every component/service pack is fixed.
 
-- Red Hat and SUSE: CSAF 2.0/VEX, including product-tree relationships and product/group-scoped remediations. SUSE `recommended` builds count as fixed only when covered by a vendor-fix remediation. Service-pack context stays in the evidence. SUSE advisory references are shown at document scope rather than assigned to every package.
+- Red Hat and SUSE: CSAF 2.0/VEX, including product-tree relationships and product/group-scoped remediations. SUSE `recommended` builds count as fixed only when covered by a vendor-fix remediation. Service-pack context stays in the evidence. SUSE advisory references are shown at document scope rather than assigned to every package. SUSE public-cloud container-host images ("CHOST Images for …") are separate products; they are left out of the SLES OS rows and their count is shown with the source.
 - Ubuntu: tracker JSON. Pending uploads remain affected, rather than published fixes.
-- Debian: tracker JSON. A resolved entry with fixed version `0` means unaffected.
+- Debian: tracker JSON. A resolved entry with fixed version `0` means unaffected. Debian 11 (Bullseye) is not offered: its LTS ended in August 2026 and the tracker no longer lists it. Saved selections drop it automatically.
 - Alpine: secdb fix records. Absence in this fix-only feed does not establish unaffected status.
 
 Manual CSAF/VEX import remains available. Local imports stay in browser storage and need manual reimport. Vendor evidence and local imports are combined conservatively in the underlying evidence. Source links open in new tabs. The EUVD link opens its search homepage.

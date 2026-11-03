@@ -7,8 +7,9 @@ import httpx
 import pytest
 
 from backend.cache import Cache, RETENTION
+import backend.main
 from backend.main import Service, create_app
-from backend.providers import Providers, csaf, ubuntu, debian, alpine
+from backend.providers import DEADLINES, NotPublished, PRODUCTS, Providers, csaf, describe, ubuntu, debian, alpine
 
 CVE = "CVE-2026-98432"
 WORKSPACE = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
@@ -27,6 +28,7 @@ class Clock:
 class FakeProviders:
     def __init__(self, clock):
         self.clock, self.calls, self.fail = clock, [], False
+        self.unknown, self.unpublished, self.slow = set(), set(), set()
 
     def prune(self, clear=False):
         pass
@@ -36,12 +38,20 @@ class FakeProviders:
         await asyncio.sleep(0)
         if self.fail:
             raise ValueError("offline")
+        if cve in self.unknown:
+            raise NotPublished("CVE ID not found in the CVE Program.")
         return {"cveMetadata": {"cveId": cve}, "containers": {"cna": {"title": "A case"}}}
 
     async def vendor(self, family, cve):
         self.calls.append((family, cve))
         if self.fail:
             raise ValueError("vendor offline")
+        if family in self.slow:
+            await asyncio.sleep(5)
+        if family in self.unpublished or cve in self.unknown:
+            if family in ("debian", "alpine"):
+                return {}, dict(url="https://vendor.example/bulk.json", checked=self.clock() * 1000, mode="API cache")
+            raise NotPublished(f"{family} has not published a document for this CVE yet.")
         if family == "sles":
             data, metadata = csaf(FIXTURE, cve, "sles")
         else:
@@ -225,3 +235,83 @@ def test_http_provider_shares_bulk_feeds_and_expires_memory_cache():
             provider.prune()
             assert not provider.raw
     asyncio.run(run())
+
+
+def test_unknown_cve_is_404_and_not_cached(setup):
+    clock, providers, path = setup
+    providers.unknown.add("CVE-2026-9999991")
+    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+        response = client.get("/api/cves/CVE-2026-9999991?families=debian,sles")
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"]
+        assert client.app.state.service.cache.ids() == []
+
+
+def test_full_cache_evicts_oldest_unwatched_entry(setup, monkeypatch):
+    clock, providers, path = setup
+    monkeypatch.setattr(backend.main, "CAPACITY", 2)
+    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+        cache = client.app.state.service.cache
+        client.put(f"/api/workspaces/{WORKSPACE}/watches", json={"cases": [{"id": "CVE-2026-0001", "families": []}]})
+        for cve in ("CVE-2026-0001", "CVE-2026-0002", "CVE-2026-0003"):
+            clock.now += 1
+            assert client.get(f"/api/cves/{cve}?families=").status_code == 200
+        assert sorted(cache.ids()) == ["CVE-2026-0001", "CVE-2026-0003"]
+        client.put(f"/api/workspaces/{WORKSPACE}/watches", json={"cases": [{"id": "CVE-2026-0001", "families": []}, {"id": "CVE-2026-0003", "families": []}]})
+        assert client.get("/api/cves/CVE-2026-0004?families=").status_code == 429
+
+
+def test_unpublished_vendor_document_is_not_an_outage(setup):
+    clock, providers, path = setup
+    providers.unpublished.add("sles")
+    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+        body = client.get(f"/api/cves/{CVE}?families=sles").json()
+        source = body["vendorData"]["sources"]["sles"]
+        assert "not published" in source["notPublished"] and "error" not in source and source["checked"]
+        assert "error" not in body
+
+
+def test_new_vendor_selection_fetches_only_that_vendor(setup):
+    clock, providers, path = setup
+    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+        client.get(f"/api/cves/{CVE}?families=sles")
+        attempted = client.app.state.service.cache.get(CVE)["attempted"]
+        providers.calls.clear()
+        clock.now += 120
+        client.get(f"/api/cves/{CVE}?families=sles,rhel")
+        assert providers.calls == [("rhel", CVE)]
+        assert client.app.state.service.cache.get(CVE)["attempted"] == attempted
+
+
+def test_slow_vendor_times_out_without_blocking_others(setup, monkeypatch):
+    clock, providers, path = setup
+    providers.slow.add("rhel")
+    monkeypatch.setitem(DEADLINES, "rhel", 0.05)
+    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+        body = client.get(f"/api/cves/{CVE}?families=sles,rhel").json()
+        assert body["vendorData"]["sources"]["rhel"]["error"] == "Vendor source unavailable: request timed out"
+        assert body["vendorData"]["evidence"]["sles15"]
+
+
+def test_source_errors_are_short():
+    request = httpx.Request("GET", "https://ubuntu.com/security/cves/CVE-2026-1.json")
+    error = httpx.HTTPStatusError("boom", request=request, response=httpx.Response(503, request=request))
+    assert describe(error) == "HTTP 503 from ubuntu.com"
+
+
+def test_suse_cloud_images_are_excluded_from_os_rows():
+    doc = {
+        "document": {"csaf_version": "2.0", "references": []},
+        "product_tree": {"relationships": [
+            {"product_reference": "openssh", "relates_to_product_reference": "SUSE Linux Enterprise Server 15 SP6", "full_product_name": {"product_id": "sp6:openssh", "name": "openssh as component of SUSE Linux Enterprise Server 15 SP6"}},
+            {"product_reference": "openssh", "relates_to_product_reference": "SLES 15 SP5 CHOST Images for Google", "full_product_name": {"product_id": "img:openssh", "name": "openssh as component of SLES 15 SP5 CHOST Images for Google"}},
+        ]},
+        "vulnerabilities": [{"cve": CVE, "product_status": {"fixed": ["sp6:openssh"], "known_affected": ["img:openssh"]}, "remediations": []}],
+    }
+    data, metadata = csaf(doc, CVE, "sles")
+    assert [e["status"] for e in data["sles15"]] == ["fixed"]
+    assert metadata["excludedImages"] == 1
+
+
+def test_debian_11_is_no_longer_offered():
+    assert "debian11" not in PRODUCTS

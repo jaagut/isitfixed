@@ -7,11 +7,33 @@ import time
 import httpx
 
 HOUR = 3600
+# Per-CVE documents should answer quickly; bulk feeds are large shared downloads.
+DEADLINES = {"record": 30, "rhel": 30, "sles": 30, "ubuntu": 30, "debian": 150, "alpine": 150}
+# SUSE lists public-cloud container-host images alongside the OS. They are
+# separate products, so they are excluded from the SLES rows and counted instead.
+SUSE_IMAGE = re.compile(r"\bimages? for\b|\bCHOST\b", re.I)
+
+
+class NotPublished(Exception):
+    """The source has no document for this CVE (HTTP 404)."""
+
+
+def describe(exc):
+    """Short, user-facing description of a source failure."""
+    if isinstance(exc, NotPublished):
+        return str(exc)
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"HTTP {exc.response.status_code} from {exc.request.url.host}"
+    if isinstance(exc, (TimeoutError, httpx.TimeoutException)):
+        return "request timed out"
+    if isinstance(exc, httpx.RequestError):
+        return f"connection failed ({exc.request.url.host})"
+    return str(exc) or type(exc).__name__
 FAMILIES = {"rhel", "sles", "debian", "ubuntu", "alpine"}
 PRODUCTS = {
     **{f"rhel{v}": ("rhel", re.compile(rf"\bred hat enterprise linux(?: {v}\b|[^()]*\(v\. {v}\))", re.I)) for v in (8, 9, 10)},
     **{f"sles{v}": ("sles", re.compile(rf"\b(?:suse linux enterprise server|sles) {v}\b", re.I)) for v in (15, 16)},
-    **{f"debian{v}": ("debian", code) for v, code in ((11, "bullseye"), (12, "bookworm"), (13, "trixie"))},
+    **{f"debian{v}": ("debian", code) for v, code in ((12, "bookworm"), (13, "trixie"))},
     **{f"ubuntu{v}": ("ubuntu", code) for v, code in (("2004", "focal"), ("2204", "jammy"), ("2404", "noble"), ("2604", "resolute"))},
     **{f"alpine{v.replace('.', '')}": ("alpine", v) for v in ("3.20", "3.21", "3.22", "3.23", "3.24")},
 }
@@ -55,14 +77,18 @@ def csaf(doc, cve, family):
 
     groups = {g["group_id"]: g.get("product_ids", []) for g in tree.get("product_groups", [])}
     source = "Red Hat VEX" if family == "rhel" else "SUSE CSAF"
-    result = {}
+    result, images = {}, set()
     for product, (group, pattern) in PRODUCTS.items():
         if group != family:
             continue
         items = []
         for key, base in (("known_affected", "affected"), ("known_not_affected", "unaffected"), ("fixed", "fixed"), ("recommended", "recommended"), ("under_investigation", "unknown")):
             for pid in vulnerability.get("product_status", {}).get(key, []):
-                if not pattern.search(resolve(pid)):
+                full = resolve(pid)
+                if not pattern.search(full):
+                    continue
+                if family == "sles" and SUSE_IMAGE.search(full):
+                    images.add(pid)
                     continue
                 rem = [r for r in vulnerability.get("remediations", []) if
                        (not r.get("product_ids") and not r.get("group_ids")) or pid in r.get("product_ids", []) or
@@ -80,6 +106,8 @@ def csaf(doc, cve, family):
                 items.append(item)
         result[product] = items
     metadata = {"sourceUpdated": doc.get("document", {}).get("tracking", {}).get("current_release_date")}
+    if images:
+        metadata["excludedImages"] = len(images)
     if family == "sles":
         metadata["advisories"] = [{"url": r["url"], "label": r["summary"].removeprefix("Advisory link for ")} for r in doc["document"].get("references", []) if r.get("summary", "").startswith("Advisory link for ") and r.get("url")]
     return result, metadata
@@ -180,8 +208,16 @@ class Providers:
             else:
                 task.add_done_callback(lambda _: self.pending.pop(url, None))
 
+    async def get_document(self, url, missing):
+        try:
+            return await self.get_json(url)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                raise NotPublished(missing) from None
+            raise
+
     async def record(self, cve):
-        doc = await self.get_json(f"https://cveawg.mitre.org/api/cve/{cve}")
+        doc = await self.get_document(f"https://cveawg.mitre.org/api/cve/{cve}", "CVE ID not found in the CVE Program (not published, reserved or mistyped).")
         if doc.get("cveMetadata", {}).get("cveId") != cve or not doc.get("containers"):
             raise ValueError("Invalid CVE record")
         return doc
@@ -191,10 +227,10 @@ class Providers:
         metadata = {}
         if family in ("rhel", "sles"):
             url = f"https://security.access.redhat.com/data/csaf/v2/vex/{year}/{cve.lower()}.json" if family == "rhel" else f"https://ftp.suse.com/pub/projects/security/csaf-vex/{max(2023, int(year))}/{cve.lower()}.json"
-            result, metadata = csaf(await self.get_json(url), cve, family)
+            result, metadata = csaf(await self.get_document(url, f"{'Red Hat' if family == 'rhel' else 'SUSE'} has not published a document for this CVE yet."), cve, family)
         elif family == "ubuntu":
             url = f"https://ubuntu.com/security/cves/{cve}.json"
-            result = ubuntu(await self.get_json(url), cve)
+            result = ubuntu(await self.get_document(url, "Ubuntu has not published a tracker entry for this CVE yet."), cve)
         elif family == "debian":
             url = "https://security-tracker.debian.org/tracker/data/json"
             result = debian(await self.get_json(url, shared=True), cve)

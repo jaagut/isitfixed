@@ -31,6 +31,10 @@ class Cache:
         with self.db:
             self.db.execute("INSERT INTO cases VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, families=excluded.families, attempted=excluded.attempted", (cve, json.dumps(row["payload"]), json.dumps(sorted(row["families"])), row["unwatched_since"], row["attempted"]))
 
+    def delete(self, cve):
+        with self.db:
+            self.db.execute("DELETE FROM cases WHERE id=?", (cve,))
+
     def watch_families(self, cve):
         rows = self.db.execute("SELECT families FROM watches WHERE id=?", (cve,))
         return {family for row in rows for family in json.loads(row[0])}

@@ -14,10 +14,11 @@ import httpx
 from pydantic import BaseModel, Field, field_validator
 
 from .cache import Cache, RETENTION
-from .providers import FAMILIES, HOUR, Providers
+from .providers import DEADLINES, FAMILIES, HOUR, NotPublished, Providers, describe
 
 ROOT = Path(__file__).resolve().parent.parent
 logger = logging.getLogger("cve-desk")
+CAPACITY = 1000
 
 
 class Service:
@@ -32,6 +33,19 @@ class Service:
         self.locks = {key: lock for key, lock in self.locks.items() if key in active or lock.locked()}
         self.providers.prune(clear=not active)
 
+    def make_room(self, cve):
+        """Evict the least recently refreshed unwatched entry when the cache is full."""
+        ids = self.cache.ids()
+        if len(ids) < CAPACITY:
+            return
+        watched = set(self.cache.watched_ids())
+        for candidate in ids:
+            lock = self.locks.get(candidate)
+            if candidate != cve and candidate not in watched and not (lock and lock.locked()):
+                self.cache.delete(candidate)
+                return
+        raise HTTPException(429, "Cache capacity reached. Try again later.")
+
     async def get(self, cve, families, force=False, touch=True):
         self.prune()
         lock = self.locks.setdefault(cve, asyncio.Lock())
@@ -43,11 +57,11 @@ class Service:
             if row and row["unwatched_since"] is not None and row["unwatched_since"] + RETENTION <= now:
                 self.cache.prune(now)
                 row = None
-            if not row:
+            created = not row
+            if created:
                 if not touch and not self.cache.watched(cve):
                     return None
-                if len(self.cache.ids()) >= 1000:
-                    raise HTTPException(429, "Cache capacity reached. Try again later.")
+                self.make_room(cve)
                 row = dict(payload={"id": cve, "vendorData": {"id": cve, "evidence": {}, "sources": {}}}, families=set(), unwatched_since=None if self.cache.watched(cve) else now, attempted=0)
             missing = families - row["families"]
             due = not row["attempted"] or now - row["attempted"] >= HOUR
@@ -55,35 +69,62 @@ class Service:
             row["families"] |= families
             # Refresh updates cannot change the watch/retention lifecycle.
             self.cache.put(cve, row)
-            if due or manual or missing:
+            if due or manual:
                 async with self.capacity:
-                    await self.refresh(cve, row)
+                    await self.refresh(cve, row, row["families"], full=True)
+            elif missing:
+                # Only newly selected vendors are fetched; the hourly clock is unchanged.
+                async with self.capacity:
+                    await self.refresh(cve, row, missing, full=False)
             result = copy.deepcopy(row["payload"])
-            lifecycle = self.cache.get(cve)["unwatched_since"]
+            empty = not result.get("record") and not any(result["vendorData"]["evidence"].values())
+            if empty and created and not self.cache.watched(cve):
+                # Failed lookups are not stored, so unknown IDs cannot fill the cache.
+                self.cache.delete(cve)
+            current = self.cache.get(cve)
+            lifecycle = current["unwatched_since"] if current else now
             result["cache"] = {"watched": lifecycle is None, "expiresAt": int((lifecycle + RETENTION) * 1000) if lifecycle is not None else None, "lastAttempt": int(row["attempted"] * 1000), "retentionDays": 10, "refreshAfter": int((row["attempted"] + 60) * 1000)}
-            if not result.get("record") and not any(result["vendorData"]["evidence"].values()):
-                raise HTTPException(502, result.get("error", "No CVE or vendor data could be retrieved. Try again later."))
+            if empty:
+                raise HTTPException(404 if result.get("notFound") else 502, result.get("error", "No CVE or vendor data could be retrieved. Try again later."))
             return result
 
-    async def refresh(self, cve, row):
-        families = sorted(row["families"])
-        results = await asyncio.gather(self.providers.record(cve), *(self.providers.vendor(family, cve) for family in families), return_exceptions=True)
+    async def refresh(self, cve, row, families, full=True):
+        families = sorted(families)
         payload = row["payload"]
+        fetch_record = full or not payload.get("record")
+
+        def limited(name, work):
+            return asyncio.wait_for(work, DEADLINES[name])
+
+        jobs = [limited("record", self.providers.record(cve))] if fetch_record else []
+        jobs += [limited(family, self.providers.vendor(family, cve)) for family in families]
+        results = await asyncio.gather(*jobs, return_exceptions=True)
         now = self.clock()
-        if isinstance(results[0], Exception):
-            payload["error"] = f"CVE source unavailable: {results[0]}"
-        else:
-            payload["record"], payload["checked"] = results[0], int(now * 1000)
-            payload.pop("error", None)
+        if fetch_record:
+            record, results = results[0], results[1:]
+            if isinstance(record, NotPublished):
+                payload["error"], payload["notFound"] = describe(record), True
+            elif isinstance(record, Exception):
+                payload["error"] = f"CVE source unavailable: {describe(record)}"
+                payload.pop("notFound", None)
+            else:
+                payload["record"], payload["checked"] = record, int(now * 1000)
+                payload.pop("error", None)
+                payload.pop("notFound", None)
         vendors = payload["vendorData"]
-        for family, result in zip(families, results[1:]):
-            if isinstance(result, Exception):
-                vendors["sources"][family] = {**vendors["sources"].get(family, {}), "error": f"Vendor source unavailable: {result}", "attempted": int(now * 1000)}
+        for family, result in zip(families, results):
+            if isinstance(result, NotPublished):
+                # No vendor document is a known state, not an outage. Prior evidence is kept.
+                previous = {k: v for k, v in vendors["sources"].get(family, {}).items() if k not in ("error", "attempted", "checked")}
+                vendors["sources"][family] = {**previous, "notPublished": describe(result), "checked": int(now * 1000), "mode": "API cache"}
+            elif isinstance(result, Exception):
+                vendors["sources"][family] = {**vendors["sources"].get(family, {}), "error": f"Vendor source unavailable: {describe(result)}", "attempted": int(now * 1000)}
             else:
                 evidence, source = result
                 vendors["evidence"].update(evidence)
                 vendors["sources"][family] = source
-        row["attempted"] = now
+        if full:
+            row["attempted"] = now
         self.cache.put(cve, row)
 
     async def tick(self):
@@ -159,7 +200,7 @@ def create_app(db_path=None, *, providers=None, clock=time.time, background=True
         entries = {entry.id: entry.model_dump() for entry in body.cases}
         service = app.state.service
         service.prune()
-        if len(set(service.cache.watched_ids()) | set(entries)) > 1000:
+        if len(set(service.cache.watched_ids()) | set(entries)) > CAPACITY:
             raise HTTPException(429, "Watch capacity reached")
         service.cache.sync_watches(workspace, list(entries.values()), service.clock())
         return {"watched": len(entries), "unwatchedRetentionDays": 10}

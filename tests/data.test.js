@@ -25,3 +25,17 @@ test('affected evidence wins over a fixed component',()=>{
 test('missing metrics and identifiers',()=>{
   assert.equal(summary(null).score,undefined);assert.equal(validId('CVE-2024-3094'),true);assert.equal(validId('CVE-2024-<script>'),false);
 });
+
+test('records without a CNA title use a short description sentence, not the record state', () => {
+  const record={cveMetadata:{cveId:'CVE-2025-32463',state:'PUBLISHED'},containers:{cna:{descriptions:[{lang:'en',value:'Sudo before 1.9.17p1 allows local users to obtain root access because /etc/nsswitch.conf from a user-controlled directory is used with the --chroot option. More text.'}]}}};
+  const {title}=summary(record);
+  assert.notEqual(title,'PUBLISHED');
+  assert.ok(title.startsWith('Sudo before 1.9.17p1') && title.length<=91, title);
+  assert.equal(summary({cveMetadata:{state:'REJECTED'},containers:{cna:{}}}).title,'Rejected CVE');
+  assert.equal(summary(undefined).title,'Awaiting source data');
+});
+
+test('end-of-life Debian 11 is not offered and is dropped from saved selections', () => {
+  assert.ok(!PRODUCTS.some(p=>p.id==='debian11'));
+  assert.deepEqual(migrateProducts(['debian11','debian12']),['debian12']);
+});
