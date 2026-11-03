@@ -28,3 +28,14 @@ test('API failures and wrong CVE IDs are errors, without vendor proxy fallback',
     await assert.rejects(()=>fetchCase('CVE-2026-98432',[]),/mismatched/);
   }finally{globalThis.fetch=original;}
 });
+test('progressive case results decode across chunk boundaries',async()=>{
+  const {streamCase}=await import('../src/api.js');const original=globalThis.fetch;
+  try{
+    const first={id:'CVE-2026-98432',vendorData:{id:'CVE-2026-98432',sources:{}}};
+    const last={...first,record:{cveMetadata:{cveId:first.id}}};
+    const text=JSON.stringify(first)+'\n'+JSON.stringify(last)+'\n',encoder=new TextEncoder();
+    globalThis.fetch=async()=>new Response(new ReadableStream({start(c){c.enqueue(encoder.encode(text.slice(0,20)));c.enqueue(encoder.encode(text.slice(20)));c.close();}}));
+    const areas=[];const result=await streamCase(first.id,[],false,data=>areas.push(data));
+    assert.equal(areas.length,2);assert.deepEqual(result,last);
+  }finally{globalThis.fetch=original;}
+});

@@ -315,3 +315,32 @@ def test_suse_cloud_images_are_excluded_from_os_rows():
 
 def test_debian_11_is_no_longer_offered():
     assert "debian11" not in PRODUCTS
+
+
+def test_progressive_sources_publish_before_slow_vendor(tmp_path):
+    async def check():
+        clock = Clock()
+        gate = asyncio.Event()
+        class Delayed(FakeProviders):
+            async def vendor(self, family, cve):
+                if family == 'ubuntu':
+                    await gate.wait()
+                return await super().vendor(family, cve)
+        cache = Cache(tmp_path / 'progress.sqlite')
+        service = Service(cache, Delayed(clock), clock)
+        snapshots = []
+        ready = asyncio.Event()
+        def publish(payload):
+            snapshots.append(payload)
+            if payload.get('record'):
+                ready.set()
+        task = asyncio.create_task(service.get(CVE, {'rhel', 'ubuntu'}, publish=publish))
+        await asyncio.wait_for(ready.wait(), 1)
+        assert not task.done()
+        assert 'ubuntu' not in snapshots[-1]['vendorData']['sources']
+        gate.set()
+        result = await task
+        assert 'ubuntu' in result['vendorData']['sources']
+        assert 'ubuntu' not in snapshots[0]['vendorData']['sources']
+        cache.close()
+    asyncio.run(check())

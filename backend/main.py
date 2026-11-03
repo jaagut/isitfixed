@@ -2,18 +2,20 @@ import asyncio
 import copy
 from contextlib import asynccontextmanager, suppress
 import logging
+import json
 import os
 from pathlib import Path
 import time
 
 from fastapi import FastAPI, HTTPException, Path as APIPath, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 import httpx
 from pydantic import BaseModel, Field, field_validator
 
 from .cache import Cache, RETENTION
+from .tmds import Inventory
 from .providers import DEADLINES, FAMILIES, HOUR, NotPublished, Providers, describe
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -46,7 +48,7 @@ class Service:
                 return
         raise HTTPException(429, "Cache capacity reached. Try again later.")
 
-    async def get(self, cve, families, force=False, touch=True):
+    async def get(self, cve, families, force=False, touch=True, publish=None):
         self.prune()
         lock = self.locks.setdefault(cve, asyncio.Lock())
         async with lock:
@@ -71,11 +73,11 @@ class Service:
             self.cache.put(cve, row)
             if due or manual:
                 async with self.capacity:
-                    await self.refresh(cve, row, row["families"], full=True)
+                    await self.refresh(cve, row, row["families"], full=True, publish=publish)
             elif missing:
                 # Only newly selected vendors are fetched; the hourly clock is unchanged.
                 async with self.capacity:
-                    await self.refresh(cve, row, missing, full=False)
+                    await self.refresh(cve, row, missing, full=False, publish=publish)
             result = copy.deepcopy(row["payload"])
             empty = not result.get("record") and not any(result["vendorData"]["evidence"].values())
             if empty and created and not self.cache.watched(cve):
@@ -88,7 +90,7 @@ class Service:
                 raise HTTPException(404 if result.get("notFound") else 502, result.get("error", "No CVE or vendor data could be retrieved. Try again later."))
             return result
 
-    async def refresh(self, cve, row, families, full=True):
+    async def refresh(self, cve, row, families, full=True, publish=None):
         families = sorted(families)
         payload = row["payload"]
         fetch_record = full or not payload.get("record")
@@ -96,33 +98,47 @@ class Service:
         def limited(name, work):
             return asyncio.wait_for(work, DEADLINES[name])
 
-        jobs = [limited("record", self.providers.record(cve))] if fetch_record else []
-        jobs += [limited(family, self.providers.vendor(family, cve)) for family in families]
-        results = await asyncio.gather(*jobs, return_exceptions=True)
+        async def area(name, work):
+            try:
+                return name, await limited(name, work)
+            except Exception as error:
+                return name, error
+
+        jobs = [asyncio.create_task(area("record", self.providers.record(cve)))] if fetch_record else []
+        jobs += [asyncio.create_task(area(family, self.providers.vendor(family, cve))) for family in families]
+        try:
+            for job in asyncio.as_completed(jobs):
+                name, result = await job
+                now = self.clock()
+                if name == "record":
+                    if isinstance(result, Exception):
+                        payload["error"] = f"CVE source unavailable: {describe(result)}"
+                        if isinstance(result, NotPublished):
+                            payload["notFound"] = True
+                    else:
+                        payload["record"], payload["checked"] = result, int(now * 1000)
+                        payload.pop("error", None)
+                        payload.pop("notFound", None)
+                else:
+                    vendors = payload["vendorData"]
+                    if isinstance(result, NotPublished):
+                        previous = {k: v for k, v in vendors["sources"].get(name, {}).items() if k not in ("error", "attempted", "checked")}
+                        vendors["sources"][name] = {**previous, "notPublished": describe(result), "checked": int(now * 1000), "mode": "API cache"}
+                    elif isinstance(result, Exception):
+                        vendors["sources"][name] = {**vendors["sources"].get(name, {}), "error": f"Vendor source unavailable: {describe(result)}", "attempted": int(now * 1000)}
+                    else:
+                        evidence, source = result
+                        vendors["evidence"].update(evidence)
+                        vendors["sources"][name] = source
+                self.cache.put(cve, row)
+                if publish:
+                    publish(copy.deepcopy(payload))
+        finally:
+            for job in jobs:
+                if not job.done():
+                    job.cancel()
+            await asyncio.gather(*jobs, return_exceptions=True)
         now = self.clock()
-        if fetch_record:
-            record, results = results[0], results[1:]
-            if isinstance(record, NotPublished):
-                payload["error"], payload["notFound"] = describe(record), True
-            elif isinstance(record, Exception):
-                payload["error"] = f"CVE source unavailable: {describe(record)}"
-                payload.pop("notFound", None)
-            else:
-                payload["record"], payload["checked"] = record, int(now * 1000)
-                payload.pop("error", None)
-                payload.pop("notFound", None)
-        vendors = payload["vendorData"]
-        for family, result in zip(families, results):
-            if isinstance(result, NotPublished):
-                # No vendor document is a known state, not an outage. Prior evidence is kept.
-                previous = {k: v for k, v in vendors["sources"].get(family, {}).items() if k not in ("error", "attempted", "checked")}
-                vendors["sources"][family] = {**previous, "notPublished": describe(result), "checked": int(now * 1000), "mode": "API cache"}
-            elif isinstance(result, Exception):
-                vendors["sources"][family] = {**vendors["sources"].get(family, {}), "error": f"Vendor source unavailable: {describe(result)}", "attempted": int(now * 1000)}
-            else:
-                evidence, source = result
-                vendors["evidence"].update(evidence)
-                vendors["sources"][family] = source
         if full:
             row["attempted"] = now
         self.cache.put(cve, row)
@@ -172,10 +188,16 @@ def create_app(db_path=None, *, providers=None, clock=time.time, background=True
             source = providers or Providers(client, clock)
             service = app.state.service = Service(cache, source, clock)
             service.prune()
+            inventory = app.state.inventory = Inventory(cache, client, clock)
+            agent_worker = asyncio.create_task(inventory.worker()) if background and providers is None else None
             worker = asyncio.create_task(service.worker()) if background else None
             try:
                 yield
             finally:
+                if agent_worker:
+                    agent_worker.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await agent_worker
                 if worker:
                     worker.cancel()
                     with suppress(asyncio.CancelledError):
@@ -190,6 +212,11 @@ def create_app(db_path=None, *, providers=None, clock=time.time, background=True
     origins = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()]
     if origins:
         app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["GET", "PUT"], allow_headers=["Content-Type"])
+
+    @app.get("/api/tmds")
+    async def tmds(response: Response):
+        response.headers["Cache-Control"] = "no-store"
+        return app.state.inventory.snapshot()
 
     @app.get("/api/health")
     async def health():
@@ -213,6 +240,37 @@ def create_app(db_path=None, *, providers=None, clock=time.time, background=True
         result = await app.state.service.get(cve, selected, refresh)
         response.headers["Cache-Control"] = "no-store"
         return result
+
+    @app.get("/api/cves/{cve}/stream")
+    async def stream(cve: str = APIPath(pattern=r"^CVE-\d{4}-\d{4,}$", max_length=32), families: str = Query("", max_length=80), refresh: bool = False):
+        selected = set(filter(None, families.split(",")))
+        if not selected <= FAMILIES:
+            raise HTTPException(422, "Unknown vendor family")
+
+        async def events():
+            queue = asyncio.Queue()
+            async def run():
+                try:
+                    result = await app.state.service.get(cve, selected, refresh, publish=queue.put_nowait)
+                    queue.put_nowait(result)
+                except HTTPException as error:
+                    queue.put_nowait({"error": str(error.detail), "failed": True})
+                except Exception:
+                    logger.exception("Progressive lookup failed")
+                    queue.put_nowait({"error": "Source lookup failed. Try again later.", "failed": True})
+                finally:
+                    queue.put_nowait(None)
+            task = asyncio.create_task(run())
+            try:
+                while True:
+                    item = await queue.get()
+                    if item is None:
+                        break
+                    yield json.dumps(item) + "\n"
+            finally:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+        return StreamingResponse(events(), media_type="application/x-ndjson", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
     if serve_frontend and os.getenv("SERVE_FRONTEND", "true").lower() == "true":
         # Explicit mounts keep the database, backend files and repository private.

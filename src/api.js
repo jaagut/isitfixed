@@ -28,3 +28,14 @@ function workspaceId(){
 export async function syncWatches(cases){
   return request(`/workspaces/${workspaceId()}/watches`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({cases:cases.map(c=>({id:c.id,families:families(c.products)}))})});
 }
+
+export async function streamCase(id,products,force,onArea){
+  const params=new URLSearchParams({families:families(products).join(','),refresh:String(force)});
+  const response=await fetch(`${API_BASE.replace(/\/$/,'')}/cves/${encodeURIComponent(id)}/stream?${params}`,{signal:AbortSignal.timeout(180000),cache:'no-store'});
+  if(!response.ok)throw Error(`CVE API returned HTTP ${response.status}`);
+  const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='',latest;
+  const consume=line=>{if(!line.trim())return;const data=JSON.parse(line);if(data.failed)throw Error(data.error);if(data.id!==id||data.vendorData?.id!==id)throw Error('Mismatched case data');latest=data;onArea(data);};
+  try{while(true){const {value,done}=await reader.read();buffer+=decoder.decode(value,{stream:!done});const lines=buffer.split('\n');buffer=lines.pop();lines.forEach(consume);if(done)break;}if(buffer.trim())consume(buffer);return latest;}finally{await reader.cancel();}
+}
+
+export const fetchAgents=()=>request('/tmds');
