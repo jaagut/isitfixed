@@ -24,7 +24,17 @@ const selected=c=>PRODUCTS.filter(p=>c.products.includes(p.id));
 function status(c){if(!c.record&&!c.vex&&!c.vendorData) return 'unknown';const rows=selected(c).map(p=>assessmentStatus(assess(c.record || {cveMetadata:{cveId:c.id}},p,c.vex,c.vendorData)));return rows.includes('affected')?'affected':!rows.length||rows.includes('unknown')?'unknown':rows.includes('fix_available')?'fix_available':'unaffected';}
 const labels={affected:'Affected',unknown:'No data',fixed:'Fix published',fix_available:'Fix available',unaffected:'Not affected'};
 const badge=(s,label=labels[s])=>`<span class="status ${s}"><span class="dot"></span>${label}</span>`;
-function renderSidebar(){const q=$('#search').value.toLowerCase();$('#case-count').textContent=state.cases.length;$('#case-list').innerHTML=sortedCases(state).filter(c=>`${c.id} ${summary(c.record).title}`.toLowerCase().includes(q)).map(c=>`<button class="case-item ${active===c.id?'selected':''}" data-case="${c.id}"><span class="case-id"><span class="dot ${status(c)}"></span>${c.id}${hasCaseUpdate(state,c)?'<span class="case-update" aria-label="Unread update">New</span>':''}</span><small>${esc(c.record?summary(c.record).title:'Awaiting lookup')}</small></button><button class="delete-case" data-delete="${c.id}" aria-label="Delete ${c.id}">Delete</button>`).join('')||'<p class="sidebar-empty">No cases here yet.</p>';}
+const trashIcon='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6"/></svg>';
+const statusSymbols={affected:'!',unknown:'?',fix_available:'↑',unaffected:'✓'};
+function statusCounts(c,products){const counts={affected:0,fix_available:0,unaffected:0,unknown:0,inconclusive:0};for(const p of products){const a=assess(c.record||{cveMetadata:{cveId:c.id}},p,c.vex,c.vendorData),s=assessmentStatus(a);counts[s==='unknown'&&a.evidence.length?'inconclusive':s]++;}return counts;}
+function statusDescription(c){const counts=statusCounts(c,selected(c));return Object.entries(counts).filter(([,n])=>n).map(([s,n])=>`${n} ${s==='inconclusive'?'inconclusive':labels[s].toLowerCase()}`).join(', ')||'No OS versions selected';}
+function renderSidebar(){
+  const q=$('#search').value.toLowerCase();$('#case-count').textContent=state.cases.length;
+  $('#case-list').innerHTML=sortedCases(state).filter(c=>`${c.id} ${summary(c.record).title}`.toLowerCase().includes(q)).map(c=>{
+    const s=status(c),description=`Selected OS versions: ${statusDescription(c)}`;
+    return `<div class="case-entry"><button class="case-item ${active===c.id?'selected':''}" data-case="${c.id}" ${active===c.id?'aria-current="page"':''} title="${esc(description)}"><span class="case-id"><span class="case-status ${s}" role="img" aria-label="${esc(description)}" title="${esc(description)}">${statusSymbols[s]}</span>${c.id}${hasCaseUpdate(state,c)?'<span class="case-update" aria-label="Unread update">New</span>':''}</span><small>${esc(c.record?summary(c.record).title:'Awaiting lookup')}</small></button><button class="delete-case" data-delete="${c.id}" aria-label="Delete ${c.id}" title="Delete ${c.id}">${trashIcon}</button></div>`;
+  }).join('')||'<p class="sidebar-empty">No cases here yet.</p>';
+}
 function render(){renderSidebar(); const c=state.cases.find(c=>c.id===active);if(!c){renderHome();return;}const s=summary(c.record);const loading=busy.has(c.id);
 $('#main').innerHTML=`<div class="page-heading"><div><h1>${c.id}</h1><p class="case-title">${esc(s.title)}</p></div><div class="actions"><button id="refresh" ${loading?'disabled':''}>${loading?'↻ Checking…':'↻ Refresh data'}</button><details class="freshness"><summary>Evidence · ${date(c.checked)}</summary><div class="panel source-panel">${sourceHealth(c)}</div></details></div></div>
 ${c.error?`<div class="alert" role="alert">${esc(c.error)} ${c.record?'Showing the last saved snapshot.':'Try refreshing again.'}</div>`:''}
@@ -74,7 +84,7 @@ function productRow(c,p){
 function renderHome(){const counts={affected:0,unknown:0,fix_available:0,unaffected:0};state.cases.forEach(c=>counts[status(c)]++);$('#main').innerHTML=`<div class="page-heading"><h1>Cases</h1><button class="primary" id="home-add">＋ Open a case</button></div><div class="stats">${Object.keys(counts).map(s=>`<div class="panel"><span class="dot ${s}"></span><strong>${counts[s]}</strong><span>${labels[s]}</span></div>`).join('')}</div>${state.cases.length?'':'<p class="muted">Open a CVE to check your selected operating systems.</p>'}`;$('#home-add').onclick=openAdd;}
 function orderedVendors(){const order=Array.isArray(state.osOrder)?state.osOrder:[];return [...VENDORS].sort((a,b)=>(order.includes(a.id)?order.indexOf(a.id):99)-(order.includes(b.id)?order.indexOf(b.id):99));}
 const collapsed=new Set(), choiceOpen=new Set();
-function groupRows(c){return orderedVendors().map(v=>{const rows=selected(c).filter(p=>p.family===v.id);return rows.length?`<details class="os-group" data-os="${v.id}" ${collapsed.has(v.id)?'':'open'}><summary>${logo({...v,family:v.id})} ${esc(v.name)} <span>${rows.length}</span></summary>${rows.map(p=>productRow(c,p)).join('')}</details>`:'';}).join('');}
+function groupRows(c){return orderedVendors().map(v=>{const rows=selected(c).filter(p=>p.family===v.id);if(!rows.length)return '';const counts=statusCounts(c,rows);return `<details class="os-group" data-os="${v.id}" ${collapsed.has(v.id)?'':'open'}><summary>${logo({...v,family:v.id})}<strong>${esc(v.name)}</strong><span class="os-status-summary">${Object.entries(counts).filter(([,n])=>n).map(([s,n])=>`<span class="status ${s==='inconclusive'?'unknown':s}">${n} ${s==='inconclusive'?'Inconclusive':labels[s]}</span>`).join('')}</span></summary>${rows.map(p=>productRow(c,p)).join('')}</details>`;}).join('');}
 document.addEventListener('toggle',e=>{if(e.target.matches('.os-group')){if(e.target.open)collapsed.delete(e.target.dataset.os);else collapsed.add(e.target.dataset.os);}if(e.target.matches('.vendor-choice')){const key=e.target.dataset.choice;if(e.target.open)choiceOpen.add(key);else choiceOpen.delete(key);}},true);
 function choices(ids,prefix){return orderedVendors().map(v=>{const products=PRODUCTS.filter(p=>p.family===v.id),count=products.filter(p=>ids.includes(p.id)).length;return `<details class="vendor-choice ${count?'enabled':''}" data-choice="${prefix}-${v.id}" ${choiceOpen.has(`${prefix}-${v.id}`)?'open':''}><summary>${logo({...v,family:v.id})} ${v.name} <span>${count} selected</span></summary><div class="version-choices">${products.map(p=>`<label><input type="checkbox" value="${p.id}" ${ids.includes(p.id)?'checked':''}>${p.version}</label>`).join('')}</div></details>`;}).join('');}
 function readChoices(e,container){return [...container.querySelectorAll('input[value]:checked')].map(i=>i.value);}
@@ -100,6 +110,23 @@ async function refresh(c,force=true){
   }catch(e){c.error=e.message;c.attempted=Date.now();}
   finally{busy.delete(c.id);save();renderSidebar();if(active===c.id)render();if(JSON.stringify(requestedProducts)!==JSON.stringify(c.products))refresh(c,false);}
 }
+const resizeHandle=$('#sidebar-resize');
+function sidebarWidth(value,persist=false){
+  const max=Math.min(480,Math.max(220,window.innerWidth-420));
+  const width=Math.round(Math.max(220,Math.min(max,Number(value)||265)));
+  document.documentElement.style.setProperty('--sidebar-width',`${width}px`);
+  resizeHandle.setAttribute('aria-valuenow',width);resizeHandle.setAttribute('aria-valuemax',max);
+  if(persist){state.sidebarWidth=width;save();}
+}
+sidebarWidth(state.sidebarWidth);
+let resizing=false;
+resizeHandle.onpointerdown=e=>{if(e.button!==0)return;e.preventDefault();resizing=true;resizeHandle.setPointerCapture(e.pointerId);document.body.classList.add('resizing-sidebar');};
+resizeHandle.onpointermove=e=>{if(resizing)sidebarWidth(e.clientX);};
+function finishResize(){if(!resizing)return;resizing=false;document.body.classList.remove('resizing-sidebar');sidebarWidth(resizeHandle.getAttribute('aria-valuenow'),true);}
+resizeHandle.onpointerup=finishResize;resizeHandle.onpointercancel=finishResize;resizeHandle.onlostpointercapture=finishResize;
+resizeHandle.onkeydown=e=>{const current=Number(resizeHandle.getAttribute('aria-valuenow')),step=e.shiftKey?40:10;const values={ArrowLeft:current-step,ArrowRight:current+step,Home:220,End:480};if(e.key in values){e.preventDefault();sidebarWidth(values[e.key],true);}};
+resizeHandle.ondblclick=()=>sidebarWidth(265,true);
+window.addEventListener('resize',()=>sidebarWidth(state.sidebarWidth));
 $('#new-case').onclick=openAdd;$('#search').oninput=renderSidebar;$('#case-list').onclick=e=>{const del=e.target.closest('[data-delete]');if(del){if(confirm(`Delete ${del.dataset.delete}?`)){state.cases=state.cases.filter(c=>c.id!==del.dataset.delete);if(active===del.dataset.delete)active=null;save();render();syncWatchlist();}return;}const b=e.target.closest('[data-case]');if(b){active=b.dataset.case;markCaseRead(state,active);save();render();}};
 $('#add-form').onsubmit=e=>{e.preventDefault();const id=$('#cve-input').value.trim().toUpperCase();if(!validId(id)){$('#add-error').textContent='Use a CVE identifier such as CVE-2024-3094.';return;}$('#add-dialog').close();$('#cve-input').value='';addCase(id);};
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>document.getElementById(b.dataset.close).close());
