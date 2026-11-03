@@ -6,7 +6,7 @@
 .venv
 data
 tests
-backend/test_backend.py
+backend/test_*.py
 **/__pycache__
 .pytest_cache
 *.sqlite3*

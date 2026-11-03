@@ -4,26 +4,22 @@ A compact CVE case workspace: a static frontend with browser-local cases, backed
 
 ## Run
 
-Python 3.11+ is required. From the repository root:
+Use Docker with the Compose plugin:
 
 ```sh
-python3 -m venv .venv
-.venv/bin/python -m pip install -r backend/requirements.txt
-.venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port 8080 --workers 1
+docker compose up --build -d
 ```
 
-Open http://localhost:8080. FastAPI serves the frontend assets and API from the same origin. API documentation is at `/docs`. No Node runtime, frontend build step, API key, or GitHub Actions feed job is needed. HTTPS is recommended outside localhost and required for desktop notifications.
-
-The cache lives at `data/cache.sqlite3`, excluded from Git. Set `CACHE_DB` to change its location. Use one application worker: the hourly scheduler, request coalescing and bulk-feed cache run in that process. SQLite data and watch registrations survive restarts. Do not use `--reload` in production.
-
-### Docker
+Open http://localhost:8080. Compose binds to localhost, restarts the app automatically, and checks `/api/health`. FastAPI serves the frontend and API from the same origin. One worker runs the hourly refresh jobs and SQLite cache.
 
 ```sh
-docker build -t cve-desk .
-docker run --rm -p 8080:8080 -v cve-desk-data:/data cve-desk
+docker compose logs -f app
+docker compose down
 ```
 
-The `/data` volume holds the SQLite cache and watch registrations. Keep it across deployments.
+The existing `data/` directory is mounted at `/data`, preserving cached evidence, agent inventories and watch registrations across rebuilds and container replacement. Stopping Compose does not delete it. Browser cases and settings remain in browser storage. No host Python environment or Node installation is needed to run the app.
+
+To update after pulling changes, run `docker compose up --build -d` again. HTTPS is recommended outside localhost and required for desktop notifications. Put a reverse proxy in front if remote access is needed.
 
 ### Separate static hosting
 
@@ -76,8 +72,7 @@ The old static `vendor-data/` cache, watchlist, feed-sync script and committing 
 ## Checks
 
 ```sh
-.venv/bin/python -m pip install -r backend/requirements-dev.txt
-.venv/bin/python -m pytest backend -q
+docker compose run --rm --no-deps -v "$PWD:/workspace:ro" -w /workspace app sh -c 'pip install --no-cache-dir -r backend/requirements-dev.txt && python -m pytest -p no:cacheprovider backend -q'
 node --test
 ```
 
