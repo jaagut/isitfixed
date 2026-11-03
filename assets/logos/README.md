@@ -1,0 +1,1 @@
+OS vendor marks are identification only; no endorsement implied. Red Hat, Debian, SUSE, Ubuntu and Alpine SVGs are from [Simple Icons](https://github.com/simple-icons/simple-icons), distributed under CC0; trademarks remain with their respective owners. The Windows mark uses its standard four-pane geometry. All logos are served locally.

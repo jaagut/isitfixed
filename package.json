@@ -1,0 +1,6 @@
+{
+  "name": "cve-desk",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "python3 -m http.server 8080", "test": "node --test", "sync-feeds": "node scripts/sync-feeds.mjs", "check": "node --check src/app.js && node --check src/data.js && node --check src/feeds.js && node --check src/cases.js && node --check scripts/sync-feeds.mjs" }
+}
