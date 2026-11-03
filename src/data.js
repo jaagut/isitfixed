@@ -74,10 +74,3 @@ export function assessVex(doc,id,product,source='Imported VEX') {
   }
   return result;
 }
-export async function fetchRecord(id) {
-  const response=await fetch(`https://cveawg.mitre.org/api/cve/${id}`,{signal:AbortSignal.timeout(20000)});
-  if(!response.ok) throw new Error(response.status===404?'CVE not published or not found.':`CVE source returned HTTP ${response.status}. Try again later.`);
-  const data=await response.json();
-  if(data.cveMetadata?.cveId!==id || !data.containers) throw new Error('The source returned an invalid CVE record.');
-  return data;
-}

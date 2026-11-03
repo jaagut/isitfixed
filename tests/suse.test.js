@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {parseSuse,suseURL,suseMetadata,loadVendorData} from '../src/feeds.js';
+import {parseSuse,suseURL,suseMetadata} from '../src/feeds.js';
 import {assess,assessmentStatus,PRODUCTS} from '../src/data.js';
 const id='CVE-2026-98432';
 const fixture=JSON.parse(await readFile(new URL('./fixtures/suse-cve-2026-98432.json',import.meta.url)));
@@ -39,24 +39,4 @@ test('source-wide advisory references are preserved separately from product fixe
 test('wrong CVE or malformed source is rejected instead of becoming safe',()=>{
   assert.throws(()=>parseSuse(fixture,'CVE-2026-1111'),/mismatched CVE/);
   assert.throws(()=>parseSuse({},id),/Invalid SUSE/);
-});
-test('browser loader uses the SUSE connector when no snapshot is available',async()=>{
-  const original=globalThis.fetch,calls=[];
-  try{
-    globalThis.fetch=async url=>{calls.push(url);return url===suseURL(id)?new Response(JSON.stringify(fixture)):new Response('',{status:404});};
-    const data=await loadVendorData(id,['sles15']);
-    assert.ok(data.evidence.sles15.some(e=>e.status==='fixed'));
-    assert.equal(data.sources.sles.url,suseURL(id));assert.equal(data.sources.sles.mode,'direct');
-    assert.equal(calls.length,2);
-  }finally{globalThis.fetch=original;}
-});
-test('blocked browser fetch preserves the previous SUSE evidence and timestamp',async()=>{
-  const original=globalThis.fetch;
-  try{
-    globalThis.fetch=async()=>{throw Error('Blocked by CORS');};
-    const previous={id,evidence:parseSuse(fixture,id),sources:{sles:{url:suseURL(id),checked:1}}};
-    const data=await loadVendorData(id,['sles15'],previous);
-    assert.deepEqual(data.evidence,previous.evidence);assert.equal(data.sources.sles.checked,1);
-    assert.match(data.sources.sles.error,/CORS/);
-  }finally{globalThis.fetch=original;}
 });

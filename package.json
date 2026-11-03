@@ -2,5 +2,5 @@
   "name": "cve-desk",
   "private": true,
   "type": "module",
-  "scripts": { "start": "python3 -m http.server 8080", "test": "node --test", "sync-feeds": "node scripts/sync-feeds.mjs", "check": "node --check src/app.js && node --check src/data.js && node --check src/feeds.js && node --check src/cases.js && node --check scripts/sync-feeds.mjs" }
+  "scripts": { "start": ".venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port 8080", "test": "node --test", "check": "node --check src/app.js && node --check src/api.js && node --check src/config.js && node --check src/data.js && node --check src/feeds.js && node --check src/cases.js" }
 }

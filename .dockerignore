@@ -1,0 +1,12 @@
+.git
+.aws
+.agents
+.codex
+.env*
+.venv
+data
+tests
+backend/test_backend.py
+**/__pycache__
+.pytest_cache
+*.sqlite3*
