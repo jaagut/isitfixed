@@ -71,7 +71,7 @@ jobs:
             if (previous) await github.rest.git.updateRef({owner, repo, ref: `heads/${branch}`, sha: commit.data.sha});
             else await github.rest.git.createRef({owner, repo, ref: `refs/heads/${branch}`, sha: commit.data.sha});
             const marker = '<!-- mocked-screenshots -->';
-            const body = [marker, `## Mocked UI screenshots`, `Commit: ${context.payload.pull_request.head.sha}`, 'Synthetic data; desktop/mobile × light/dark × home/simple case/complex case.', ...files.map(file => `<details><summary>${file.replace('.png', '')}</summary>\n\n![${file}](https://raw.githubusercontent.com/${owner}/${repo}/${commit.data.sha}/${file})\n\n</details>`)].join('\n\n');
+            const body = [marker, `## Mocked UI screenshots`, `Commit: ${context.payload.pull_request.head.sha}`, 'Synthetic data; desktop/mobile × light/dark × home/simple case/complex case.', ...files.map(file => `<details><summary>${file.replace('.png', '')}</summary>\n\n[Open image](https://github.com/${owner}/${repo}/blob/${commit.data.sha}/${file})\n\n![${file}](https://github.com/${owner}/${repo}/blob/${commit.data.sha}/${file}?raw=true)\n\n</details>`)].join('\n\n');
             const comments = await github.paginate(github.rest.issues.listComments, {owner, repo, issue_number: number});
             const existing = comments.find(c => c.user.type === 'Bot' && c.body.includes(marker));
             if (existing) await github.rest.issues.updateComment({owner, repo, comment_id: existing.id, body});
