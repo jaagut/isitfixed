@@ -28,7 +28,7 @@ export const cleanMitigation = (m) =>
     .trim();
 
 export function rowAssessment(c, p) {
-  const a = assess(c.record || { cveMetadata: { cveId: c.id } }, p, c.vex, c.vendorData);
+  const a = assess(c.record || { cveMetadata: { cveId: c.id } }, p, c.vendorData);
   const s = assessmentStatus(a);
   const mitigations = new Map();
   for (const e of a.evidence)
@@ -58,7 +58,7 @@ export function rowReady(c, p) {
     const s = c.vendorData?.sources?.[p.family];
     return Boolean(s?.checked || c.vendorData?.evidence?.[p.id]?.length);
   }
-  return Boolean(c.record || c.vex);
+  return Boolean(c.record);
 }
 
 // "Ubuntu 24.04 LTS" → "Ubuntu 24.04", "Debian 12 · Bookworm" → "Debian 12".
@@ -66,7 +66,7 @@ export const shortName = (p) => p.name.replace(/ LTS$/, '').replace(/ · .*$/, '
 
 // Display status only (cheaper than rowAssessment): used for counts and sidebar icons.
 export function rowStatus(c, p) {
-  const a = assess(c.record || { cveMetadata: { cveId: c.id } }, p, c.vex, c.vendorData);
+  const a = assess(c.record || { cveMetadata: { cveId: c.id } }, p, c.vendorData);
   const s = assessmentStatus(a);
   return s === 'unknown' && a.evidence.length ? 'inconclusive' : s;
 }

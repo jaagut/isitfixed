@@ -2,7 +2,7 @@
 // the Sources section. Pure: returns HTML for a case and a render context:
 //   { state, config, inventory: {data, error}, tmdsOn, busy: Set, chooserOpen, groupOverride: Map, now }
 import { VENDORS, PRODUCTS, vendorURL, groupFixes, splitPackage } from '../data.js';
-import { rowAssessment, CNA_SOURCE } from '../rows.js';
+import { rowAssessment, CNA_SOURCE, cleanMitigation } from '../rows.js';
 import { kernelSupport, supportSummary, productInventory, isKernelFix, kspName, kernelFamilies } from '../tmds.js';
 import { sourceCards, sourceSummary, SOURCE_STATES } from '../sources.js';
 import { esc, safeURL, externalLink, sourceLink, isSafeURL, date, time, day, plural, icons } from '../util.js';
@@ -158,7 +158,6 @@ function productsSection(c, ctx) {
     '</div>',
     `<div id="case-products" class="product-choices panel" ${ctx.chooserOpen ? '' : 'hidden'}>${choices(ctx.state, c.products)}</div>`,
     '<div class="panel product-table">',
-    '<div class="table-head" aria-hidden="true"><span>VERSION</span><span>FIX & MITIGATION</span></div>',
     unlistedNote(c, ctx),
     rows,
     '</div>',
@@ -206,8 +205,7 @@ function osGroup(c, v, ctx) {
 // Where a piece of evidence came from: vendor feed, CVE record (CNA statement) or an imported file.
 function sourceRef(c, p, name) {
   let url;
-  if (name === 'Imported VEX') url = c.vex?.document?.references?.find((r) => r.category === 'self')?.url;
-  else if (name === CNA_SOURCE) url = `https://www.cve.org/CVERecord?id=${c.id}`;
+  if (name === CNA_SOURCE) url = `https://www.cve.org/CVERecord?id=${c.id}`;
   else url = c.vendorData?.sources?.[p.family]?.url || vendorURL(p, c.id);
   return url && isSafeURL(url) ? externalLink(safeURL(url), `${esc(name)} ↗`) : `${esc(name)} (local file)`;
 }
@@ -224,12 +222,11 @@ function rowAdvisories(p, row) {
   const advisories = row.advisories.filter(isSafeURL);
   if (!advisories.length) return '';
   const link = (url) => externalLink(safeURL(url), `${advisoryLabel(url)} ↗`);
-  const inline = `Advisor${advisories.length > 1 ? 'ies' : 'y'}: ${advisories.slice(0, 2).map(link).join(', ')}${advisories.length > 2 ? ` <span class="fact-more">+${advisories.length - 2}</span>` : ''}`;
-  const list =
-    advisories.length > 2
-      ? `<details class="advisory-list" data-detail="${p.id}:advisories"><summary>All ${advisories.length} advisories</summary><div>${advisories.map(link).join('')}</div></details>`
-      : '';
-  return `<div class="row-advisories">${inline}</div>${list}`;
+  const extra = advisories.slice(2);
+  const more = extra.length
+    ? `<details class="advisory-list" data-detail="${p.id}:advisories"><summary aria-label="Show ${extra.length} more advisor${extra.length === 1 ? 'y' : 'ies'}">+${extra.length}</summary><div>${extra.map(link).join('')}</div></details>`
+    : '';
+  return `<div class="row-advisories"><span>Advisor${advisories.length > 1 ? 'ies' : 'y'}: ${advisories.slice(0, 2).map(link).join(', ')}</span>${more}</div>`;
 }
 
 // One line of the fix column. With details it expands in place, below its own summary.
@@ -272,19 +269,39 @@ function fixFact(groups, windows, key) {
   return fact('Fix', value, body, 'fix', key);
 }
 // Each mitigation lists the sources that published it.
-function mitigationFact(c, p, mitigations) {
+function mitigationFact(c, p, mitigations, row) {
   if (!mitigations.length) return fact('Mitigation', '<span class="fact-none">None reported</span>');
   const first = mitigations[0].text.split('\n').find((l) => l.trim());
   const more = mitigations.length > 1 ? ` <span class="fact-more">+${mitigations.length - 1}</span>` : '';
+  const attribution = (m) =>
+    m.sources
+      .map((name) => {
+        // Prefer the human advisory attached to the evidence carrying this mitigation.
+        const advisories = row.assessment.evidence
+          .filter(
+            (e) =>
+              (e.source || CNA_SOURCE) === name &&
+              (e.mitigation || []).some((text) => cleanMitigation(text) === m.text),
+          )
+          .flatMap((e) => e.links || [])
+          .filter((url) => isSafeURL(url) && !/\.(?:json|xml)(?:[?#]|$)|\/(?:csaf|vex)\//i.test(url));
+        if (advisories.length)
+          return [...new Set(advisories)]
+            .map((url) => externalLink(safeURL(url), `${advisoryLabel(url)} ↗`))
+            .join(', ');
+        if (name !== CNA_SOURCE) return externalLink(safeURL(vendorURL(p, c.id)), `${esc(p.vendor)} advisory ↗`);
+        return sourceRef(c, p, name);
+      })
+      .join(', ');
   const body = mitigations
     .map(
       (m) =>
-        `<div class="mitigation-item"><p>${esc(m.text)}</p><p class="fact-source">Source: ${m.sources.map((s) => sourceRef(c, p, s)).join(', ')}</p></div>`,
+        `<div class="mitigation-item"><p>${esc(m.text)}</p><p class="fact-source">Source: ${attribution(m)}</p></div>`,
     )
     .join('');
   return fact(
     'Mitigation',
-    `<span class="fact-text">${esc(first)}</span>${more}`,
+    `<span class="when-closed"><span class="fact-text">${esc(first)}</span>${more}</span><span class="when-open">${plural(mitigations.length, 'mitigation')}</span>`,
     body,
     'mitigation',
     `${p.id}:mitigation`,
@@ -395,7 +412,7 @@ function productRow(c, p, ctx) {
   const facts = [
     fixFact(groups, windows, `${p.id}:fix`),
     ctx.tmdsOn ? tmdsFact(p, row.fixes, ctx) : '',
-    mitigationFact(c, p, row.mitigations),
+    mitigationFact(c, p, row.mitigations, row),
   ];
   return [
     `<div class="product-row ${changed ? 'changed' : ''}" data-row="${p.id}">`,

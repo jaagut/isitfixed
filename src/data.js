@@ -158,7 +158,7 @@ function range(v) {
     : '';
   return `${v.version || 'Unspecified'}${upper}${changes}`;
 }
-export function assess(record, product, vex, vendorData) {
+export function assess(record, product, vendorData) {
   const cna = record?.containers?.cna;
   // Microsoft records list every affected product, and each range ends at the
   // first fixed build ("lessThan"), published on the day the update ships.
@@ -209,7 +209,6 @@ export function assess(record, product, vex, vendorData) {
     ];
   const vendorEvidence = vendorData?.evidence?.[product.id];
   if (vendorEvidence?.length) evidence = vendorEvidence;
-  if (vex) evidence = [...evidence, ...assessVex(vex, record?.cveMetadata?.cveId, product)];
   const status = evidence.some((e) => e.status === 'affected')
     ? 'affected'
     : evidence.some((e) => e.status === 'unknown')
@@ -224,7 +223,7 @@ export function assess(record, product, vex, vendorData) {
 // Presentation highlights the available action without changing the underlying
 // affected-component evidence or claiming that a patch has been installed.
 export const assessmentStatus = (assessment) => (assessment.fixAvailable ? 'fix_available' : assessment.status);
-export function assessVex(doc, id, product, source = 'Imported VEX') {
+export function assessVex(doc, id, product, source = 'Vendor CSAF') {
   const names = new Map(),
     shortNames = new Map();
   const groups = new Map((doc.product_tree?.product_groups || []).map((g) => [g.group_id, g.product_ids || []]));

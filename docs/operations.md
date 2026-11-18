@@ -95,7 +95,7 @@ kept; the least recently used ones are dropped first.
 | Usage counters                        | Hourly buckets, 14 days.                                                                               |
 | Application logs                      | ≤ 14 days (`LOG_RETENTION_DAYS`).                                                                      |
 | Rate-limit state                      | In memory only; keyed hashes with a daily key rotation; lost on restart.                               |
-| Browser data (cases, notes, settings) | Only in the visitor's browser (localStorage) until they delete it.                                     |
+| Browser data (cases, notes, settings) | Only in the visitor's browser (IndexedDB) until they delete it.                                        |
 
 SQLite runs with `secure_delete` and without a persistent write-ahead log, so deleted rows do not linger in the
 database file.

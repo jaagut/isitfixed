@@ -201,9 +201,8 @@ docker run --rm -v cve-desk-data:/from:ro -v isitfixed-data:/to alpine \
 docker compose up --build -d
 ```
 
-Keep the old volume until you have verified the upgrade. Browser storage keys retain their original `cve-desk-`
-prefix so cases, preferences and anonymous watch registrations survive the rename on the same origin. Moving to a
-new domain is a different browser origin: export your workspace on the old domain and import it on the new domain.
+Keep the old volume until you have verified the upgrade. Browser workspaces now use IndexedDB and start fresh;
+legacy localStorage is not migrated. Browser storage remains origin-specific.
 New application logs use `isitfixed.log`; the retention task also removes expired pre-rebrand logs.
 
 ## Migrating from the ./data bind mount

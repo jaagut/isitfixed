@@ -1,7 +1,7 @@
 // Markup shared by the sidebar, the home page and the case page. Functions
 // return HTML strings; every dynamic value is escaped here.
 import { PRODUCTS, VENDORS, summary } from '../data.js';
-import { rowStatus } from '../rows.js';
+import { rowStatus, shortName } from '../rows.js';
 import { esc, icons } from '../util.js';
 
 export const STATUS_ORDER = ['affected', 'fix_available', 'inconclusive', 'unaffected', 'unknown'];
@@ -25,7 +25,7 @@ export function statusCounts(c, products) {
   return counts;
 }
 export function caseStatus(c) {
-  if (!c.record && !c.vex && !c.vendorData) return 'unknown';
+  if (!c.record && !c.vendorData) return 'unknown';
   const counts = statusCounts(c, selected(c));
   return STATUS_ORDER.find((s) => counts[s]) || 'unknown';
 }
@@ -40,13 +40,20 @@ export function statusDescription(c) {
 // Thin bar with one segment per OS version, in status order. Segment widths are
 // applied from data-flex after rendering (no inline styles under the CSP).
 export function statusBar(c) {
-  const counts = statusCounts(c, selected(c)),
-    total = Object.values(counts).reduce((a, b) => a + b, 0);
-  if (!total) return '';
-  const segments = STATUS_ORDER.filter((s) => counts[s])
-    .map((s) => `<span class="${s}" data-flex="${counts[s]}"></span>`)
+  const products = selected(c);
+  if (!products.length) return '';
+  const rows = products.map((p) => ({ product: p, status: rowStatus(c, p) }));
+  const segments = STATUS_ORDER.map((s) => {
+    const count = rows.filter(({ status }) => status === s).length;
+    return count ? `<span class="${s}" data-flex="${count}"></span>` : '';
+  }).join('');
+  const breakdown = rows
+    .map(
+      ({ product, status }) =>
+        `<span class="status-breakdown-row">${logo(product.family)}<span>${esc(shortName(product))}</span><span class="status ${status}">${labels[status]}</span></span>`,
+    )
     .join('');
-  return `<span class="status-bar" aria-hidden="true">${segments}</span>`;
+  return `<span class="status-meter"><span class="status-total" aria-label="${rows.length} selected OS versions">${rows.length}</span><span class="status-bar" aria-hidden="true">${segments}</span><span class="status-breakdown">${breakdown}</span></span>`;
 }
 export function cvssChip(s) {
   if (s.score == null) return '';

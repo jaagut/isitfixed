@@ -71,7 +71,7 @@ source, not as an outage; the affected products stay **No data**.
 
 ## Browser storage
 
-Cases, product selections, source snapshots, settings and the workspace ID are stored in the browser's local storage for
+Cases, product selections, source snapshots, settings and the workspace ID are stored in the browser's IndexedDB for
 this site. Storage is per browser and origin, unencrypted, and can be cleared by the browser or the user. Export a backup
 from Settings to keep a copy; restoring replaces the workspace after confirmation. Legacy notes and imported evidence in
 old backups are preserved, but their editing controls have been removed.

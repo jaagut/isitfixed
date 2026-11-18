@@ -17,11 +17,9 @@ test('case refresh uses only the API, including selected vendor families and for
   }
 });
 test('watch sync sends case IDs and vendor choices without private notes or snapshots', async () => {
-  const original = globalThis.fetch,
-    storage = globalThis.localStorage;
+  const original = globalThis.fetch;
   let sent;
   try {
-    globalThis.localStorage = { getItem: () => 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' };
     globalThis.fetch = async (url, options) => {
       sent = { url, options };
       return Response.json({ watched: 1 });
@@ -33,7 +31,6 @@ test('watch sync sends case IDs and vendor choices without private notes or snap
     assert.deepEqual(JSON.parse(sent.options.body), { cases: [{ id: 'CVE-2026-98432', families: ['rhel'] }] });
   } finally {
     globalThis.fetch = original;
-    globalThis.localStorage = storage;
   }
 });
 test('API failures and wrong CVE IDs are errors, without vendor proxy fallback', async () => {

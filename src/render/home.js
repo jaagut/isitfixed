@@ -65,8 +65,7 @@ function homeHero(open, attention, ctx) {
     lede = 'Paste a CVE ID or any advisory link to open a case.';
   if (open.length) {
     title = n ? `${plural(n, 'case')} need${n > 1 ? '' : 's'} a look` : 'All clear for now';
-    const tracking = `Tracking ${plural(open.length, 'CVE')} across ${plural(ctx.state.products.length, 'default OS version')}.`;
-    lede = `${tracking} ${ctx.state.auto ? 'Cases are re-checked every hour while Is It Fixed is open.' : 'Cases are checked when you open them.'}`;
+    lede = ctx.state.auto ? 'Cases are re-checked every hour.' : 'Cases are checked when you open them.';
   }
   const examples = EXAMPLES.map(
     (id) => `<button type="button" class="example" data-example="${id}">${id}</button>`,
@@ -86,7 +85,7 @@ function homeHero(open, attention, ctx) {
   ].join('');
 }
 
-function homeStats(counts, filter) {
+function homeStats(counts, filter, open, state) {
   const stat = (s) =>
     [
       `<button type="button" class="home-stat ${s} ${counts[s] ? '' : 'empty'}" data-filter="${s}" aria-pressed="${filter === s}" ${counts[s] || filter === s ? '' : 'disabled'}>`,
@@ -95,7 +94,7 @@ function homeStats(counts, filter) {
       `<span>${labels[s]}</span>`,
       '</button>',
     ].join('');
-  return `<div class="home-stats" role="group" aria-label="Filter cases by status">${STATUS_ORDER.map(stat).join('')}</div>`;
+  return `<div class="home-totals"><span>${plural(open.length, 'open case')}</span><span>${plural(state.products.length, 'default OS version')}</span><span>${plural(state.cases.filter((c) => c.archived).length, 'archived case')}</span></div><div class="home-stats" role="group" aria-label="Filter cases by status">${STATUS_ORDER.map(stat).join('')}</div>`;
 }
 
 const homeList = (heading, cases, ctx, empty = '') =>
@@ -176,7 +175,7 @@ export function renderHome(ctx, filter) {
   }
   return [
     homeHero(open, attention, ctx),
-    open.length ? homeStats(counts, filter) : '',
+    open.length ? homeStats(counts, filter, open, state) : '',
     '<div class="home-grid">',
     `<div>${lists}${open.length ? '' : howItWorks(ctx.tmdsOn)}</div>`,
     `<aside>${homeActivity(ctx)}${homeInventory(ctx)}</aside>`,

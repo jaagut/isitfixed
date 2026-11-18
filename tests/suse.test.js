@@ -30,7 +30,6 @@ test('real SUSE CSAF separates major versions and preserves service-pack context
   const assessment = assess(
     { cveMetadata: { cveId: id } },
     PRODUCTS.find((p) => p.id === 'sles15'),
-    null,
     { evidence },
   );
   assert.equal(assessment.status, 'affected');

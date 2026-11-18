@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { assess, PRODUCTS, summary, validId, migrateProducts } from '../src/data.js';
+import { assess, assessVex, PRODUCTS, summary, validId, migrateProducts } from '../src/data.js';
 const p = PRODUCTS.find((p) => p.id === 'rhel9');
 const record = (affected) => ({ cveMetadata: { cveId: 'CVE-2024-3094' }, containers: { cna: { affected } } });
 test('missing product is unknown and RHEL major versions stay separate', () => {
@@ -56,24 +56,12 @@ test('VEX relationships inherit context; remediations stay product-scoped', () =
       },
     ],
   };
-  const a = assess(record([]), p, vex);
+  const evidence = assessVex(vex, 'CVE-2024-3094', p);
+  const a = { status: evidence[0].status, evidence };
   assert.equal(a.status, 'fixed');
   assert.deepEqual(a.evidence[0].mitigation, ['Disable feature']);
   assert.equal(a.evidence[0].fix.length, 1);
-  assert.equal(assess({ ...record([]), cveMetadata: { cveId: 'CVE-2025-1234' } }, p, vex).status, 'unknown');
-});
-test('affected evidence wins over a fixed component', () => {
-  const vex = {
-    vulnerabilities: [{ cve: 'CVE-2024-3094', product_status: { fixed: ['red_hat_enterprise_linux_9:kernel'] } }],
-  };
-  assert.equal(
-    assess(
-      record([{ product: 'Red Hat Enterprise Linux 9', versions: [{ version: '1', status: 'affected' }] }]),
-      p,
-      vex,
-    ).status,
-    'affected',
-  );
+  assert.deepEqual(assessVex(vex, 'CVE-2025-1234', p), []);
 });
 test('missing metrics and identifiers', () => {
   assert.equal(summary(null).score, undefined);

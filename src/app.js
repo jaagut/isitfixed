@@ -5,16 +5,9 @@ import { hasCaseUpdate, recordUpdate, markCaseRead, sortedCases } from './cases.
 import { streamCase, syncWatches, fetchAgents, fetchConfig, DEFAULT_CONFIG } from './api.js';
 import { validId, extractCveIds } from './data.js';
 import { caseActionState, diffActions, withoutTmds, describeChanges } from './changes.js';
-import {
-  THEME_KEY,
-  DISCLAIMER_VERSION,
-  MAX_OPEN_CASES,
-  MAX_CASES,
-  loadWorkspace,
-  saveable,
-  persistWorkspace,
-  caseSearchText,
-} from './state.js';
+import { DISCLAIMER_VERSION, MAX_OPEN_CASES, MAX_CASES, saveable } from './state.js';
+import { loadWorkspace, saveWorkspace, saveTheme } from './storage.js';
+import { matchesCase, searchSuggestions, searchRelevance } from './search.js';
 import { esc, icons, HOUR } from './util.js';
 import {
   selected,
@@ -33,9 +26,9 @@ import { setupSettings } from './settings.js';
 const $ = (s) => document.querySelector(s);
 const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-const loaded = loadWorkspace(localStorage);
+const loaded = await loadWorkspace();
 let state = loaded.state,
-  // The saved workspace could not be read or moved aside: saving would overwrite it.
+  // Keep an unreadable IndexedDB workspace intact until exported.
   storageLocked = loaded.locked,
   config = { ...DEFAULT_CONFIG },
   active = null,
@@ -48,13 +41,13 @@ const busy = new Set(),
   inventory = { data: null, error: null };
 
 // Never writes a workspace that would fail validation on the next load.
-function save() {
+async function save() {
   if (storageLocked) return;
   if (!saveable(state)) {
     toast('Changes were not saved: the workspace exceeds its limits. Delete or archive cases.');
     return;
   }
-  const result = persistWorkspace(localStorage, state);
+  const result = await saveWorkspace(state);
   if (!result.saved && !storageFailed) {
     toast('Browser storage is full or unavailable. Your changes are kept in this tab; export a backup.', {
       label: 'Export backup',
@@ -92,15 +85,11 @@ function download(text, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 // 'system' removes the attribute so the stylesheet follows prefers-color-scheme. The early
-// theme script reads its own key, so it never parses the workspace.
+// theme module reads the preference from IndexedDB.
 function applyTheme() {
   if (state.theme === 'system') delete document.documentElement.dataset.theme;
   else document.documentElement.dataset.theme = state.theme;
-  try {
-    localStorage.setItem(THEME_KEY, state.theme);
-  } catch {
-    /* Storage unavailable: the theme still applies for this visit. */
-  }
+  void saveTheme(state.theme);
 }
 applyTheme();
 
@@ -253,6 +242,12 @@ async function shareCase(c) {
   }
 }
 function caseAction(e) {
+  const meter = e.target.closest('.status-meter');
+  if (meter && matchMedia('(hover: none)').matches) {
+    meter.classList.toggle('expanded');
+    e.preventDefault();
+    return true;
+  }
   const b = e.target.closest('[data-share],[data-archive],[data-delete]');
   if (!b) return false;
   const id = b.dataset.share || b.dataset.archive || b.dataset.delete,
@@ -276,12 +271,12 @@ function caseEntry(c) {
     description = esc(`Selected OS versions: ${statusDescription(c)}`),
     archived = Boolean(c.archived),
     current = active === c.id;
-  const icon = `<span class="case-status ${s}" role="img" aria-label="${description}" title="${description}">${statusSymbols[s]}</span>`;
+  const icon = `<span class="case-status ${s}" role="img" aria-label="${description}">${statusSymbols[s]}</span>`;
   const unread =
     hasCaseUpdate(state, c) && !archived ? '<span class="case-update" aria-label="Unread update">New</span>' : '';
   return [
     `<div class="case-entry ${archived ? 'archived' : ''}">`,
-    `<button type="button" class="case-item ${current ? 'selected' : ''}" data-case="${c.id}" ${current ? 'aria-current="page"' : ''} title="${description}">`,
+    `<button type="button" class="case-item ${current ? 'selected' : ''}" data-case="${c.id}" ${current ? 'aria-current="page"' : ''} >`,
     `<span class="case-id">${icon}${c.id}${cvssChip(sum(c.record, state.cvss))}${unread}</span>`,
     `<small>${esc(c.record ? sum(c.record, state.cvss).title : c.savedTitle || 'Awaiting lookup')}</small>`,
     statusBar(c),
@@ -302,9 +297,10 @@ function brokenEntry(c) {
 const entry = (c) => safely(() => caseEntry(c), brokenEntry(c));
 function renderSidebar() {
   const q = $('#search').value.trim().toLowerCase(),
-    terms = q.split(/\s+/).filter(Boolean),
-    match = (c) => safely(() => terms.every((term) => caseSearchText(c).includes(term)), true);
-  const cases = sortedCases(state).filter(match),
+    match = (c) => safely(() => matchesCase(c, q), false);
+  const cases = sortedCases(state)
+      .filter(match)
+      .sort((a, b) => (q ? searchRelevance(b, q) - searchRelevance(a, q) : 0)),
     open = cases.filter((c) => !c.archived),
     archived = cases.filter((c) => c.archived);
   $('#case-count').textContent = state.cases.filter((c) => !c.archived).length;
@@ -659,7 +655,84 @@ $('#disclaimer-accept').onclick = () => {
 
 // Global controls
 $('#new-case').onclick = openAdd;
-$('#search').oninput = renderSidebar;
+function showSearchOptions() {
+  const input = $('#search'),
+    options = $('#search-options');
+  const prefix = input.value.trim() ? input.value.trimEnd() + ' ' : '';
+  const groups = [
+    ['os', 'Operating systems…'],
+    ['version', 'OS versions…'],
+    ['status', 'Status…'],
+  ];
+  const launchers = groups.map(([field, label]) => ({ label, group: 'Filter by', value: prefix + field + ':' }));
+  const qualified = /(?:^|\s)(os|version|status):[^\s]*$/i.test(input.value);
+  const suggestions = [...(qualified ? [] : launchers), ...searchSuggestions(input.value)];
+  options.innerHTML =
+    suggestions
+      .map(
+        (s) =>
+          `<button type="button" role="option" aria-selected="false" data-query="${esc(s.value)}"><span>${esc(s.label)}</span><small>${esc(s.group)}</small></button>`,
+      )
+      .join('') || '<p>No matching filters. Search text is matched against your cases.</p>';
+  options.hidden = false;
+  input.setAttribute('aria-expanded', 'true');
+}
+function hideSearchOptions() {
+  $('#search-options').hidden = true;
+  $('#search').setAttribute('aria-expanded', 'false');
+}
+function updateSearch() {
+  $('#clear-search').hidden = !$('#search').value;
+  renderSidebar();
+}
+$('#search').oninput = () => {
+  updateSearch();
+  showSearchOptions();
+};
+$('#search').onfocus = showSearchOptions;
+$('#search').onclick = showSearchOptions;
+$('#search').onkeydown = (e) => {
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    hideSearchOptions();
+  }
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    showSearchOptions();
+    $('#search-options button')?.focus();
+  }
+};
+$('#search-options').onclick = (e) => {
+  const button = e.target.closest('[data-query]');
+  if (!button) return;
+  $('#search').value = button.dataset.query;
+  updateSearch();
+  $('#search').focus();
+  showSearchOptions();
+};
+$('#search-options').onkeydown = (e) => {
+  const buttons = [...$('#search-options').querySelectorAll('button')],
+    i = buttons.indexOf(document.activeElement);
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    buttons[(i + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus();
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    $('#search').focus();
+    hideSearchOptions();
+  }
+};
+$('.search-area').addEventListener('focusout', () =>
+  queueMicrotask(() => {
+    if (!$('.search-area').contains(document.activeElement)) hideSearchOptions();
+  }),
+);
+$('#clear-search').onclick = () => {
+  $('#search').value = '';
+  updateSearch();
+  $('#search').focus();
+  showSearchOptions();
+};
 $('#case-list').onclick = $('#archived-list').onclick = (e) => {
   if (caseAction(e)) return;
   if (e.target.closest('.archive-toggle')) {
@@ -704,6 +777,7 @@ $('.brand').onclick = (e) => {
   if (previous && !previous.hasUpdate) delete previous.changedRows;
   active = null;
   render();
+  focusHome();
 };
 document.addEventListener('keydown', (e) => {
   const key = e.key.toLowerCase(),
@@ -712,7 +786,14 @@ document.addEventListener('keydown', (e) => {
       ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName) ||
       document.activeElement.isContentEditable;
   if (document.querySelector('dialog[open]') || e.altKey) return;
-  if ((mod && key === 'k') || (key === '/' && !mod && !typing)) {
+  if (mod && key === 'k') {
+    e.preventDefault();
+    $('#search').focus();
+    $('#search').select();
+    showSearchOptions();
+    return;
+  }
+  if (key === '/' && !mod && !typing) {
     e.preventDefault();
     openAdd();
   }
@@ -753,16 +834,11 @@ syncWatchlist().then(catchUp);
 // Problems found while loading the saved workspace.
 function startupNotices() {
   const day = new Date().toISOString().slice(0, 10);
-  if (loaded.recovery) {
-    toast('Your saved workspace could not be read, so Is It Fixed started empty. A copy is kept in this browser.', {
-      label: 'Export copy',
-      run: () => download(localStorage.getItem(loaded.recovery) || '', `isitfixed-recovery-${day}.json`),
-    });
-  } else if (loaded.locked) {
-    toast('Your saved workspace could not be read. Export it before making changes; nothing is saved until then.', {
+  if (loaded.locked) {
+    toast('Your saved workspace could not be read. Export it before replacing it.', {
       label: 'Export',
       run() {
-        download(loaded.raw || '', `isitfixed-recovery-${day}.json`);
+        download(JSON.stringify(loaded.raw || {}, null, 2), `isitfixed-recovery-${day}.json`);
         storageLocked = false;
         save();
       },

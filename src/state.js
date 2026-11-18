@@ -2,12 +2,6 @@
 import { CVSS_VERSIONS, migrateProducts, validId } from './data.js';
 import { validTheme } from './cases.js';
 
-// Keep the original keys so the rebrand preserves existing workspaces and preferences.
-export const STORAGE_KEY = 'cve-desk-v1';
-// The appearance has its own key so the early theme script does not parse the workspace.
-export const THEME_KEY = 'cve-desk-theme';
-// A saved workspace that cannot be read is kept under this prefix plus a timestamp (at most one).
-export const RECOVERY_PREFIX = `${STORAGE_KEY}-recovery-`;
 // Bump to show the first-visit disclaimer again after its text changes.
 export const DISCLAIMER_VERSION = '2026-11-18';
 // Open cases are watched by the server (MAX_WATCHES_PER_WORKSPACE); archived ones are not.
@@ -92,7 +86,7 @@ function sanitizeCase(c) {
     if (v) c.vendorData = v;
     else delete c.vendorData;
   }
-  if (c.vex !== undefined && !isObject(c.vex)) delete c.vex;
+  delete c.vex; // Imported VEX is no longer a supported input.
   if (c.cache !== undefined && !isObject(c.cache)) delete c.cache;
   if (c.error !== undefined && typeof c.error !== 'string') delete c.error;
   if (c.changedRows !== undefined) {
@@ -170,65 +164,6 @@ export function saveable(s) {
   return s.cases.filter((c) => !c.archived).length <= MAX_OPEN_CASES;
 }
 
-function recoveryKeys(storage) {
-  const keys = [];
-  for (let i = 0; i < (storage.length || 0); i++) {
-    const k = storage.key(i);
-    if (k?.startsWith(RECOVERY_PREFIX)) keys.push(k);
-  }
-  return keys;
-}
-export const recoveryKey = (storage) => recoveryKeys(storage).sort().at(-1) || null;
-
-// Keeps an unreadable saved workspace under a recovery key (replacing an older copy).
-// Returns the key, or null when it could not be kept anywhere but its original place.
-function keepForRecovery(storage, raw, now) {
-  const key = `${RECOVERY_PREFIX}${now}`;
-  for (const k of recoveryKeys(storage)) storage.removeItem(k);
-  try {
-    storage.setItem(key, raw);
-    return key;
-  } catch {
-    // Not enough space for a copy: move it instead.
-  }
-  try {
-    storage.removeItem(STORAGE_KEY);
-    storage.setItem(key, raw);
-    return key;
-  } catch {
-    try {
-      storage.setItem(STORAGE_KEY, raw);
-    } catch {
-      /* Nothing more to do: the caller must not overwrite it. */
-    }
-    return null;
-  }
-}
-
-/**
- * Loads the saved workspace.
- * @returns {{state, report, recovery: string|null, locked: boolean, raw?: string}} `recovery` is the key
- *   under which an unreadable saved workspace was kept; `locked` means it could not be moved aside (saving
- *   would overwrite it), and `raw` then holds it for an export.
- */
-export function loadWorkspace(storage, now = Date.now()) {
-  const report = {};
-  let raw;
-  try {
-    raw = storage.getItem(STORAGE_KEY);
-  } catch {
-    return { state: defaultState(), report, recovery: null, locked: false };
-  }
-  if (!raw) return { state: defaultState(), report, recovery: null, locked: false };
-  try {
-    return { state: validateState(JSON.parse(raw), report, now), report, recovery: null, locked: false };
-  } catch {
-    const recovery = keepForRecovery(storage, raw, now);
-    return { state: defaultState(), report, recovery, locked: !recovery, raw: recovery ? undefined : raw };
-  }
-}
-export const loadState = (storage) => loadWorkspace(storage).state;
-
 const list = (v) => (Array.isArray(v) ? v : []);
 
 // Search includes package names and descriptions: the CNA title often names neither.
@@ -237,8 +172,6 @@ export function caseSearchText(c) {
   return [
     c.id,
     c.notes,
-    c.savedTitle,
-    c.searchText,
     cna?.title,
     ...list(cna?.descriptions).map((d) => d?.value),
     ...list(cna?.affected).flatMap((a) => [a?.vendor, a?.product, a?.packageName]),
@@ -249,79 +182,4 @@ export function caseSearchText(c) {
     .filter((v) => typeof v === 'string')
     .join(' ')
     .toLowerCase();
-}
-
-const pick = (value, keys) =>
-  Object.fromEntries(keys.filter((key) => value?.[key] !== undefined).map((key) => [key, value[key]]));
-function compactRecord(record) {
-  const cna = record?.containers?.cna;
-  if (!cna) return record;
-  return {
-    cveMetadata: record.cveMetadata,
-    containers: {
-      cna: {
-        ...pick(cna, ['title', 'descriptions', 'metrics', 'problemTypes', 'providerMetadata']),
-        ...(Array.isArray(cna.affected)
-          ? {
-              affected: cna.affected.map((a) =>
-                pick(a, ['vendor', 'product', 'packageName', 'defaultStatus', 'versions']),
-              ),
-            }
-          : {}),
-      },
-      ...(Array.isArray(record.containers.adp) ? { adp: record.containers.adp.map((a) => pick(a, ['metrics'])) } : {}),
-    },
-  };
-}
-
-// localStorage commonly allows about 5 MiB, counting UTF-16 strings. Leave room for
-// preferences, watch identity and other origin keys; failure still preserves the old save.
-export const WORKSPACE_CHAR_BUDGET = 2_000_000;
-export function persistWorkspace(storage, state, budget = WORKSPACE_CHAR_BUDGET) {
-  if (!saveable(state)) return { saved: false, reason: 'invalid' };
-  const cases = state.cases.map((c) => ({
-    ...c,
-    ...(c.record ? { record: compactRecord(c.record) } : {}),
-  }));
-  const snapshot = { ...state, cases };
-  const candidates = cases
-    .filter((c) => c.record || c.vendorData)
-    .sort(
-      (a, b) =>
-        Boolean(b.archived) - Boolean(a.archived) || (a.updatedAt || a.created || 0) - (b.updatedAt || b.created || 0),
-    );
-  let evictedSnapshots = 0;
-  const evict = (c) => {
-    // Keep enough metadata for sidebar search when a disposable snapshot is omitted.
-    c.savedTitle = c.record?.containers?.cna?.title || c.savedTitle;
-    // Bound derived search metadata, never user-authored notes.
-    c.searchText = caseSearchText(c).slice(0, 16000);
-    for (const key of ['record', 'vendorData', 'apiChecked', 'checked', 'cache']) delete c[key];
-    evictedSnapshots++;
-  };
-  let raw = JSON.stringify(snapshot);
-  if (raw.length > budget) {
-    let estimate = raw.length;
-    while (estimate > budget && candidates.length) {
-      const c = candidates.shift(),
-        before = JSON.stringify(c).length;
-      evict(c);
-      estimate -= before - JSON.stringify(c).length;
-    }
-    raw = JSON.stringify(snapshot);
-  }
-  while (true) {
-    if (raw.length > budget) return { saved: false, reason: 'full', evictedSnapshots };
-    try {
-      storage.setItem(STORAGE_KEY, raw);
-      return { saved: true, compacted: true, evictedSnapshots };
-    } catch {
-      // Actual quotas can be smaller (or another origin key can occupy space).
-      // Retry with fewer caches, but never delete the previous workspace to make room.
-      if (!candidates.length) return { saved: false, reason: 'unavailable', evictedSnapshots };
-      const count = Math.ceil(candidates.length / 2);
-      for (const c of candidates.splice(0, count)) evict(c);
-      raw = JSON.stringify(snapshot);
-    }
-  }
 }

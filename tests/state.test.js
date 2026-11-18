@@ -2,43 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   validateState,
-  loadState,
-  loadWorkspace,
   saveable,
-  recoveryKey,
   defaultState,
-  STORAGE_KEY,
-  RECOVERY_PREFIX,
   DISCLAIMER_VERSION,
   MAX_OPEN_CASES,
+  caseSearchText,
 } from '../src/state.js';
-
-const storage = (value) => ({ getItem: (k) => (k === STORAGE_KEY ? value : null) });
-// localStorage stand-in with an optional quota in characters.
-function memoryStorage(entries = {}, quota = Infinity) {
-  const map = new Map(Object.entries(entries));
-  const used = () => [...map].reduce((n, [k, v]) => n + k.length + v.length, 0);
-  return {
-    map,
-    get length() {
-      return map.size;
-    },
-    key: (i) => [...map.keys()][i] ?? null,
-    getItem: (k) => (map.has(k) ? map.get(k) : null),
-    setItem(k, v) {
-      const before = map.get(k);
-      map.set(k, String(v));
-      if (used() > quota) {
-        if (before === undefined) map.delete(k);
-        else map.set(k, before);
-        throw Error('QuotaExceededError');
-      }
-    },
-    removeItem: (k) => map.delete(k),
-  };
-}
+import { loadWorkspace, saveWorkspace, loadTheme, saveTheme, createStore } from '../src/storage.js';
 const kase = (n, extra = {}) => ({ id: `CVE-2026-${String(n).padStart(4, '0')}`, products: [], notes: '', ...extra });
-
 test('old saves migrate: TMDS on, no baseline, no disclaimer acknowledgement', () => {
   const old = {
     version: 1,
@@ -170,122 +141,116 @@ test('limits: more than 1000 cases is rejected; open cases beyond 200 are archiv
   assert.ok(!saveable({ ...defaultState(), cases: many(1001, { archived: 1 }) }));
 });
 
-test('loading falls back to defaults for missing or broken storage', () => {
-  assert.deepEqual(loadState(storage(null)), defaultState());
-  assert.deepEqual(loadState(storage('{broken')), defaultState());
-  const throwing = {
-    getItem() {
-      throw Error('SecurityError');
+function store(initial) {
+  const map = new Map(initial === undefined ? [] : [['workspace', initial]]);
+  return {
+    map,
+    get: async (k) => structuredClone(map.get(k)),
+    put: async (entries) => {
+      for (const [key, value] of entries) map.set(key, structuredClone(value));
     },
   };
-  assert.deepEqual(loadState(throwing), defaultState());
-  assert.equal(loadState(storage(JSON.stringify({ ...defaultState(), tmds: false }))).tmds, false);
+}
+test('IndexedDB workspace roundtrip retains large evidence and snapshots the call immediately', async () => {
+  const db = store(),
+    s = defaultState();
+  s.cases.push(
+    kase(1, {
+      notes: 'private',
+      record: {
+        cveMetadata: { cveId: 'CVE-2026-0001' },
+        containers: { cna: { title: 'Title', descriptions: [{ value: 'x'.repeat(3000000) }] } },
+      },
+    }),
+  );
+  const write = saveWorkspace(s, db);
+  s.cases[0].notes = 'later';
+  assert.equal((await write).saved, true);
+  const loaded = await loadWorkspace(db);
+  assert.equal(loaded.state.cases[0].notes, 'private');
+  assert.equal(loaded.state.cases[0].record.containers.cna.descriptions[0].value.length, 3000000);
 });
-
-test('an unreadable saved workspace is kept under one recovery key instead of being overwritten', () => {
-  const broken = JSON.stringify({ ...defaultState(), cases: Array.from({ length: 1001 }, (_, i) => kase(i + 1)) });
-  const store = memoryStorage({ [STORAGE_KEY]: broken, [`${RECOVERY_PREFIX}1`]: 'older' });
-  const r = loadWorkspace(store, 5);
-  assert.deepEqual(r.state, defaultState());
-  assert.equal(r.recovery, `${RECOVERY_PREFIX}5`);
-  assert.equal(r.locked, false);
-  assert.equal(store.getItem(r.recovery), broken);
-  assert.equal(store.getItem(`${RECOVERY_PREFIX}1`), null, 'at most one recovery copy');
-  assert.equal(recoveryKey(store), r.recovery);
-  // Not enough room for a copy: it is moved instead.
-  const tight = memoryStorage({ [STORAGE_KEY]: '{broken' }, 40);
-  const moved = loadWorkspace(tight, 6);
-  assert.equal(tight.getItem(moved.recovery), '{broken');
-  assert.equal(tight.getItem(STORAGE_KEY), null);
-  // No room at all: the original stays where it is and the app must not save over it.
-  const full = memoryStorage({ [STORAGE_KEY]: '{broken' }, 20);
-  const locked = loadWorkspace(full, 7);
-  assert.equal(locked.locked, true);
-  assert.equal(locked.raw, '{broken');
-  assert.equal(full.getItem(STORAGE_KEY), '{broken');
+test('unreadable current workspace is locked without deleting or overwriting it', async () => {
+  const raw = { version: 77, cases: [] },
+    db = store(raw);
+  const loaded = await loadWorkspace(db);
+  assert.equal(loaded.locked, true);
+  assert.deepEqual(loaded.raw, raw);
+  assert.deepEqual(db.map.get('workspace'), raw);
 });
-
-test('persistence drops unused record payload while preserving assessments and in-memory export', async () => {
-  const { persistWorkspace } = await import('../src/state.js');
-  const s = defaultState();
+test('storage unavailable and quota failures are reported without destroying last save', async () => {
+  const db = store(defaultState()),
+    before = structuredClone(db.map);
+  db.put = async () => {
+    throw Object.assign(Error('full'), { name: 'QuotaExceededError' });
+  };
+  assert.deepEqual(await saveWorkspace(defaultState(), db), { saved: false, reason: 'full' });
+  assert.deepEqual(db.map, before);
+  const unavailable = {
+    get: async () => {
+      throw Error('disabled');
+    },
+  };
+  assert.equal((await loadWorkspace(unavailable)).error, 'disabled');
+  assert.deepEqual((await loadWorkspace(store())).state, defaultState());
+  await assert.rejects(() => createStore(null).get('workspace'), /unavailable/);
+});
+test('theme preference shares browser database and unknown values follow system', async () => {
+  const db = store();
+  assert.equal(await loadTheme(db), 'system');
+  await saveTheme('dark', db);
+  assert.equal(await loadTheme(db), 'dark');
+  await saveWorkspace({ ...defaultState(), theme: 'light' }, db);
+  assert.equal(await loadTheme(db), 'light');
+});
+test('removed imported VEX is discarded from restore and saves', async () => {
+  const s = { ...defaultState(), cases: [kase(1, { vex: { private: true } })] },
+    db = store();
+  await saveWorkspace(s, db);
+  assert.equal(db.map.get('workspace').cases[0].vex, undefined);
+  assert.equal(validateState(structuredClone(s)).cases[0].vex, undefined);
+  assert.ok(s.cases[0].vex);
+});
+test('case search includes descriptions and affected package names in archived cases', () => {
   const c = kase(1, {
+    archived: 1,
     record: {
-      cveMetadata: { cveId: 'CVE-2026-0001' },
       containers: {
         cna: {
-          title: 'PHP problem',
-          references: [{ url: 'x'.repeat(100000) }],
-          affected: [
-            {
-              vendor: 'Vendor',
-              product: 'PHP',
-              versions: [{ version: '1', status: 'affected' }],
-              unused: 'x'.repeat(10000),
-            },
-          ],
-          metrics: [{ cvssV3_1: { baseScore: 9 } }],
+          title: 'A generic title',
+          affected: [{ packageName: 'php' }],
+          descriptions: [{ value: 'Another keyword' }],
         },
       },
     },
   });
-  s.cases.push(c);
-  const before = JSON.stringify(s),
-    store = memoryStorage();
-  assert.equal(persistWorkspace(store, s).saved, true);
-  const saved = loadState(store);
-  assert.deepEqual(saved.cases[0].record.containers.cna.affected[0].versions, [{ version: '1', status: 'affected' }]);
-  assert.equal(saved.cases[0].record.containers.cna.references, undefined);
-  assert.equal(JSON.stringify(s), before);
+  assert.ok(caseSearchText(c).includes('php'));
+  assert.ok(caseSearchText(c).includes('keyword'));
 });
 
-test('quota fallback preserves user data and baseline, omits oldest archived snapshots, and retains package search', async () => {
-  const { persistWorkspace, caseSearchText } = await import('../src/state.js');
-  const s = defaultState();
-  s.cases.push(
-    kase(1, {
-      archived: 1,
-      notes: 'keep my note',
-      products: ['debian13'],
-      actionBaseline: { rows: {} },
-      record: {
-        cveMetadata: { cveId: 'CVE-2026-0001' },
-        containers: {
-          cna: {
-            title: 'A vulnerability',
-            affected: [{ product: 'php', versions: [{ version: 'x'.repeat(15000), status: 'affected' }] }],
-          },
-        },
-      },
-    }),
-  );
-  const store = memoryStorage({}, 3000);
-  const result = persistWorkspace(store, s);
-  assert.equal(result.saved, true);
-  assert.equal(result.evictedSnapshots, 1);
-  const saved = loadState(store).cases[0];
-  assert.equal(saved.record, undefined);
-  assert.equal(saved.notes, 'keep my note');
-  assert.deepEqual(saved.products, ['debian13']);
-  assert.deepEqual(saved.actionBaseline, { rows: {} });
-  assert.ok(caseSearchText(saved).includes('php'));
-  assert.ok(s.cases[0].record);
-});
-
-test('unavailable storage does not replace the prior save or throw', async () => {
-  const { persistWorkspace } = await import('../src/state.js');
-  const store = memoryStorage({ [STORAGE_KEY]: 'old' }, 100);
-  const s = defaultState();
-  s.cases.push(kase(1, { notes: 'x'.repeat(200) }));
-  assert.equal(persistWorkspace(store, s).saved, false);
-  assert.equal(store.getItem(STORAGE_KEY), 'old');
-});
-
-test('persistence never discards an imported VEX document to satisfy quota', async () => {
-  const { persistWorkspace } = await import('../src/state.js');
-  const s = defaultState();
-  s.cases.push(kase(1, { vex: { document: { title: 'imported', data: 'x'.repeat(5000) } } }));
-  const store = memoryStorage({ [STORAGE_KEY]: 'prior save' }, 1000);
-  assert.equal(persistWorkspace(store, s).saved, false);
-  assert.equal(store.getItem(STORAGE_KEY), 'prior save');
-  assert.equal(s.cases[0].vex.document.title, 'imported');
+test('overlapping workspace saves commit in call order and a failed save does not block later writes', async () => {
+  const db = store(),
+    commits = [];
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  db.put = async (entries) => {
+    const state = entries.find(([key]) => key === 'workspace')[1];
+    if (state.theme === 'dark') await gate;
+    commits.push(state.theme);
+  };
+  const first = saveWorkspace({ ...defaultState(), theme: 'dark' }, db);
+  const second = saveWorkspace({ ...defaultState(), theme: 'light' }, db);
+  await Promise.resolve();
+  assert.deepEqual(commits, []);
+  release();
+  await Promise.all([first, second]);
+  assert.deepEqual(commits, ['dark', 'light']);
+  db.put = async () => {
+    throw Error('unavailable');
+  };
+  assert.equal((await saveWorkspace(defaultState(), db)).saved, false);
+  db.put = async () => {};
+  assert.equal((await saveWorkspace(defaultState(), db)).saved, true);
 });

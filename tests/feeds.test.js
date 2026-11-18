@@ -62,7 +62,6 @@ test('real vendor snapshot includes reported RHEL 9 fix and advisory', async () 
   const rhel = assess(
     { cveMetadata: { cveId: snapshot.id } },
     PRODUCTS.find((p) => p.id === 'rhel9'),
-    null,
     snapshot,
   );
   assert.equal(rhel.status, 'affected');
@@ -72,7 +71,6 @@ test('real vendor snapshot includes reported RHEL 9 fix and advisory', async () 
     assess(
       { cveMetadata: { cveId: snapshot.id } },
       PRODUCTS.find((p) => p.id === 'alpine322'),
-      null,
       snapshot,
     ).status,
     'unknown',

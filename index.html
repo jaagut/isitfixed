@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#111714" media="(prefers-color-scheme: dark)" />
     <title>Is It Fixed — your vulnerability workspace</title>
     <link rel="icon" href="/assets/icon.svg?v=cb550a8fc05e" type="image/svg+xml" />
-    <script src="/src/theme.js"></script>
+    <script type="module" src="/src/theme.js"></script>
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
@@ -27,10 +27,25 @@
         ></a>
       </div>
       <button type="button" id="new-case" class="primary full">＋ Open a case <kbd>/</kbd></button>
-      <label class="search">
-        <span aria-hidden="true">⌕</span>
-        <input id="search" placeholder="Search your cases…" aria-label="Search your cases" />
-      </label>
+      <div class="search-area">
+        <div class="search">
+          <span aria-hidden="true">⌕</span>
+          <input
+            id="search"
+            type="search"
+            placeholder="Search your cases…"
+            aria-label="Search your cases"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded="false"
+            aria-controls="search-options"
+            autocomplete="off"
+            title="Search your cases (Ctrl+K or ⌘K)"
+          />
+          <button type="button" id="clear-search" aria-label="Clear search" hidden>×</button>
+        </div>
+        <div id="search-options" class="search-options" role="listbox" aria-label="Search filters" hidden></div>
+      </div>
       <div class="sidebar-label">YOUR CASES <span id="case-count">0</span></div>
       <nav id="case-list" aria-label="Saved cases"></nav>
       <nav id="archived-list" aria-label="Archived cases" hidden></nav>
@@ -58,10 +73,10 @@
       <main id="main"></main>
       <footer class="site-footer">
         <p class="site-disclaimer">
-          <strong class="product-name">Is It Fixed</strong> is an informational tool. Data comes from public vendor
-          sources and may be incomplete, delayed or wrong. No warranty — use at your own discretion and verify with the
-          vendor before acting. Not affiliated with or endorsed by Red Hat, SUSE, Canonical, Debian, Alpine, Microsoft
-          or Trend Micro.
+          <span class="product-name">Is It Fixed</span> is an informational tool. Data comes from public vendor sources
+          and may be incomplete, delayed or wrong. No warranty — use at your own discretion and verify with the vendor
+          before acting. Not affiliated with or endorsed by Red Hat, SUSE, Canonical, Debian, Alpine, Microsoft or Trend
+          Micro.
         </p>
         <ul class="footer-links">
           <li data-legal="imprint" hidden><a href="/imprint">Imprint</a></li>
@@ -86,7 +101,7 @@
           <h2 id="add-title">Open a case</h2>
           <button type="button" data-close="add-dialog" aria-label="Close">×</button>
         </div>
-        <p>One vulnerability. Just the products you care about. Shortcut: / or Ctrl+K.</p>
+        <p>One vulnerability. Just the products you care about. Shortcut: /. Search your cases: Ctrl+K or ⌘K.</p>
         <label>
           CVE ID or link
           <input
@@ -126,7 +141,7 @@
         <p class="settings-hint" id="tmds-hint">
           Matches kernel fixes against the kernels bundled in Deep Security Agent 20 LTS and the published Kernel
           Support Package list. Turn this off if you do not use Deep Security:
-          <strong class="product-name">Is It Fixed</strong> then hides all TMDS details and stops loading the inventory.
+          <span class="product-name">Is It Fixed</span> then hides all TMDS details and stops loading the inventory.
         </p>
         <p class="settings-hint" id="tmds-server-off" hidden>TMDS support data is turned off on this server.</p>
       </section>
@@ -155,7 +170,7 @@
         <h3 id="settings-updates">Updates &amp; notifications</h3>
         <label class="toggle">
           <input type="checkbox" id="auto-refresh" />
-          Check cases every hour while <strong class="product-name">Is It Fixed</strong> is open
+          Check cases every hour while <span class="product-name">Is It Fixed</span> is open
         </label>
         <p class="settings-hint">
           The server also re-checks your cases hourly while this tab is closed. You are told only about changes you can
@@ -189,10 +204,10 @@
     <dialog id="disclaimer-dialog" aria-labelledby="disclaimer-title" aria-describedby="disclaimer-text">
       <h2 id="disclaimer-title">Before you start</h2>
       <p id="disclaimer-text">
-        <strong class="product-name">Is It Fixed</strong> is an informational tool. Data comes from public vendor
-        sources and may be incomplete, delayed or wrong. No warranty — use at your own discretion and verify with the
-        vendor before acting. Not affiliated with or endorsed by Red Hat, SUSE, Canonical, Debian, Alpine, Microsoft or
-        Trend Micro.
+        <span class="product-name">Is It Fixed</span> is an informational tool. Data comes from public vendor sources
+        and may be incomplete, delayed or wrong. No warranty — use at your own discretion and verify with the vendor
+        before acting. Not affiliated with or endorsed by Red Hat, SUSE, Canonical, Debian, Alpine, Microsoft or Trend
+        Micro.
       </p>
       <p class="disclaimer-privacy">
         Your cases and settings stay in this browser. To keep your cases up to date, the server receives their CVE IDs,

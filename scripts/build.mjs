@@ -9,7 +9,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = path.join(root, 'dist');
 const bundles = [
   { reference: '/src/app.js', entry: 'src/app.js', name: 'app', format: 'esm' },
-  { reference: '/src/theme.js', entry: 'src/theme.js', name: 'theme', format: 'iife' },
+  { reference: '/src/theme.js', entry: 'src/theme.js', name: 'theme', format: 'esm' },
   { reference: '/style.css', entry: 'style.css', name: 'style' },
 ];
 

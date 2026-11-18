@@ -25,7 +25,7 @@ place. The server keeps the vendor data current; your cases stay in your browser
 - **Trend Micro Deep Security (TMDS) Agent matching.** For kernel fixes, shows whether the current LTS 20 agent or a
   Kernel Support Package lists the fixed kernel. Can be switched off per user or per server.
 - **Private by design.** No account, no cookies, no analytics, no third-party resources. Cases live in your browser's
-  local storage; export and restore JSON backups.
+  IndexedDB; export and restore JSON backups.
 - **Case links** (`/CVE-2024-3094`), archive, search, light and dark theme.
 
 ## Quick start
@@ -90,7 +90,7 @@ Advanced options (`SERVE_FRONTEND`, `FRONTEND_DIR`, `API_DOCS`, `HSTS`, `USER_AG
 
 Is It Fixed uses a pull model. Nothing is pushed to your browser.
 
-1. **Your browser** stores cases, selections, settings and an anonymous random workspace ID in local storage. When you
+1. **Your browser** stores cases, selections, settings and an anonymous random workspace ID in IndexedDB. When you
    open a case, it asks the server for that CVE and the selected vendor families.
 2. **The server** fetches the CVE record and vendor documents on demand, normalizes them and caches the result in
    SQLite. Saved cases are registered as _watches_ (CVE ID + vendor families) under the anonymous workspace ID.
@@ -112,7 +112,7 @@ Details on evidence semantics, source failures and the API: [docs/evidence.md](d
 ## Privacy
 
 - No cookies, tracking, analytics or third-party resources; fonts are system fonts and all assets are served locally.
-- Browser local storage only, for things the app needs to work: cases, settings, the disclaimer acknowledgement and the
+- Browser IndexedDB only, for things the app needs to work: cases, settings, the disclaimer acknowledgement and the
   anonymous workspace ID.
 - The server stores only CVE IDs and selected vendor families per anonymous workspace ID, plus cached public vendor
   data. No names, accounts or e-mail addresses.

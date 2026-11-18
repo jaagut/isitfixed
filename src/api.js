@@ -1,3 +1,4 @@
+import { workspaceId } from './storage.js';
 import { API_BASE } from './config.js';
 import { PRODUCTS } from './data.js';
 const implemented = new Set(['rhel', 'sles', 'debian', 'ubuntu', 'alpine']);
@@ -77,34 +78,8 @@ export async function fetchCase(id, products, force = false) {
   if (data.id !== id || data.vendorData?.id !== id) throw Error('CVE API returned mismatched case data.');
   return data;
 }
-let workspace;
-function workspaceId() {
-  if (workspace) return workspace;
-  // Preserve the existing anonymous watch identity across the product rename.
-  try {
-    workspace = localStorage.getItem('cve-desk-workspace');
-  } catch {
-    // Disabled storage still permits one stable identity for this tab's lifetime.
-  }
-  if (!workspace) {
-    if (crypto.randomUUID) workspace = crypto.randomUUID();
-    else {
-      const bytes = crypto.getRandomValues(new Uint8Array(16));
-      bytes[6] = (bytes[6] & 15) | 64;
-      bytes[8] = (bytes[8] & 63) | 128;
-      const hex = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
-      workspace = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-    }
-    try {
-      localStorage.setItem('cve-desk-workspace', workspace);
-    } catch {
-      // Keep the in-memory identity rather than failing every watch synchronization.
-    }
-  }
-  return workspace;
-}
 export async function syncWatches(cases) {
-  return request(`/workspaces/${workspaceId()}/watches`, {
+  return request(`/workspaces/${await workspaceId()}/watches`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ cases: cases.map((c) => ({ id: c.id, families: families(c.products) })) }),
