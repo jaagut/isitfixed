@@ -5,7 +5,7 @@ const families=products=>[...new Set(products.map(id=>PRODUCTS.find(p=>p.id===id
 async function request(path,options={}){
   let response;
   try{response=await fetch(`${API_BASE.replace(/\/$/,'')}${path}`,{...options,signal:AbortSignal.timeout(180000),cache:'no-store'});}catch{throw Error('CVE API unavailable. Check your connection or backend configuration. Saved evidence is still available.');}
-  if(!response.ok){let message=`CVE API returned HTTP ${response.status}.`;try{const body=await response.json();if(typeof body.detail==='string')message=body.detail;}catch{}throw Error(message);}
+  if(!response.ok){let message=`CVE API returned HTTP ${response.status}.`;try{const body=await response.json();if(typeof body.detail==='string')message=body.detail;}catch{/* Non-JSON error body: keep the HTTP status message. */}throw Error(message);}
   return response.json();
 }
 export async function fetchCase(id,products,force=false){

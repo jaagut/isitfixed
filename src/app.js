@@ -8,15 +8,15 @@ fetchAgents().then(data=>{agents=data;render();}).catch(()=>{});
 setInterval(()=>fetchAgents().then(data=>{agents=data;render();}).catch(()=>{}),3600000);
 let watchQueue=Promise.resolve(),lastWatchlist='';
 function syncWatchlist(force=false){const cases=state.cases.filter(c=>!c.archived).map(c=>({id:c.id,products:[...c.products]})),key=JSON.stringify(cases);watchQueue=watchQueue.then(async()=>{if(!force&&key===lastWatchlist)return;try{await syncWatches(cases);lastWatchlist=key;}catch(e){toast(`Could not sync server watches: ${e.message}`);}});return watchQueue;}
-let state={version:1,cases:[],products:['rhel9','rhel10','debian12'],auto:true,activity:[]}, active=null, busy=new Set(), storageError=false;
-try {const saved=localStorage.getItem(KEY);if(saved) state=validate(JSON.parse(saved));} catch {storageError=true;}
+let state={version:1,cases:[],products:['rhel9','rhel10','debian12'],auto:true,activity:[]}, active=null, busy=new Set();
+try {const saved=localStorage.getItem(KEY);if(saved) state=validate(JSON.parse(saved));} catch {/* Unreadable or invalid saved state: start with the default workspace. */}
 function validate(s) {
   if(s?.version!==1 || !Array.isArray(s.cases) || !Array.isArray(s.products) || !Array.isArray(s.activity) || s.cases.length>1000) throw Error('Invalid workspace backup.');
   const ids=new Set();
   for(const c of s.cases) {if(!validId(c.id)||ids.has(c.id)||!Array.isArray(c.products)||typeof c.notes!=='string'||(c.archived!==undefined&&typeof c.archived!=='number')|| (c.record && c.record.cveMetadata?.cveId!==c.id)) throw Error('Invalid case in backup.');ids.add(c.id);c.products=migrateProducts(c.products);}
   if(s.cvss!==undefined&&!CVSS_VERSIONS.includes(s.cvss))delete s.cvss;s.products=migrateProducts(s.products);return s;
 }
-function save() {try{localStorage.setItem(KEY,JSON.stringify(state));storageError=false;}catch{storageError=true;toast('Storage unavailable or full. Export a backup to avoid losing changes.');}}
+function save() {try{localStorage.setItem(KEY,JSON.stringify(state));}catch{toast('Storage unavailable or full. Export a backup to avoid losing changes.');}}
 function toast(message){$('#toast').textContent=message;$('#toast').classList.add('visible');clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('#toast').classList.remove('visible'),6000);}
 function log(id,text){recordUpdate(state,id,text);save();renderSidebar();}
 const sum=r=>summary(r,state.cvss||'3.1');

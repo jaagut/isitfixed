@@ -71,12 +71,19 @@ The old static `vendor-data/` cache, watchlist, feed-sync script and committing 
 
 ## Checks
 
+Development tooling uses [uv](https://docs.astral.sh/uv/) for Python and [pnpm](https://pnpm.io/) for the JavaScript linters; both only resolve dependency releases that are at least two days old.
+
 ```sh
-docker compose run --rm --no-deps -v "$PWD:/workspace:ro" -w /workspace app sh -c 'pip install --no-cache-dir -r backend/requirements-dev.txt && python -m pytest -p no:cacheprovider backend -q'
-node --test
+uv sync                              # Python runtime and dev dependencies (.venv)
+pnpm install                         # prettier and eslint
+uv run pytest                        # backend tests
+pnpm test                            # frontend tests (node --test)
+uv run ruff check && uv run ruff format --check
+pnpm lint && pnpm format:check
+uv run pre-commit install            # optional: run all checks on commit
 ```
 
-Backend tests cover explicit/shared watches, ten-day expiry, rewatching, restart persistence, closed-browser refresh, concurrent lookups, cooldown, failed sources, validation, private-file routing and vendor parsing. JavaScript tests cover assessment, source semantics, sidebar updates and the browser/API contract. `npm run check` checks frontend syntax where npm is available.
+Backend tests cover explicit/shared watches, ten-day expiry, rewatching, restart persistence, closed-browser refresh, concurrent lookups, cooldown, failed sources, validation, private-file routing and vendor parsing. JavaScript tests cover assessment, source semantics, sidebar updates and the browser/API contract. `pnpm check` checks frontend syntax.
 
 Sources: [CVE Program](https://www.cve.org/), [Red Hat VEX](https://security.access.redhat.com/data/csaf/v2/vex/), [SUSE CSAF/VEX](https://ftp.suse.com/pub/projects/security/csaf-vex/), [Ubuntu tracker](https://ubuntu.com/security/cves), [Debian tracker](https://security-tracker.debian.org/tracker), [Alpine secdb](https://secdb.alpinelinux.org/). Red Hat and SUSE source data are licensed under CC BY 4.0; the cache normalizes those documents. See [logo attribution](assets/logos/README.md) and [fixture attribution](tests/fixtures/README.md). No analytics. Optional Google Fonts fall back to system fonts offline.
 
