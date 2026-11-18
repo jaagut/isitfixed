@@ -2,13 +2,29 @@
 // Rendering lives in src/render/*; matching and change detection are pure
 // modules (tmds.js, changes.js, rows.js, sources.js).
 import { hasCaseUpdate, recordUpdate, markCaseRead, sortedCases } from './cases.js';
-import { streamCase, syncWatches, fetchAgents, fetchConfig, DEFAULT_CONFIG } from './api.js';
-import { validId, extractCveIds } from './data.js';
+import {
+  streamCase,
+  syncWatches,
+  fetchAgents,
+  fetchConfig,
+  ping,
+  connection,
+  onConnectionChange,
+  reportContact,
+  DEFAULT_CONFIG,
+} from './api.js';
+import { validId, extractCveIds, PRODUCTS, VENDORS } from './data.js';
 import { caseActionState, diffActions, withoutTmds, describeChanges } from './changes.js';
 import { DISCLAIMER_VERSION, MAX_OPEN_CASES, MAX_CASES, saveable } from './state.js';
 import { loadWorkspace, saveWorkspace, saveTheme } from './storage.js';
-import { matchesCase, searchSuggestions, searchRelevance } from './search.js';
-import { esc, icons, HOUR } from './util.js';
+import {
+  matchesCase,
+  replaceSearchFilter,
+  selectedSearchFilter,
+  searchFilterLabel,
+  searchRelevance,
+} from './search.js';
+import { ago, esc, icons, time, HOUR } from './util.js';
 import {
   selected,
   sum,
@@ -18,6 +34,9 @@ import {
   statusSymbols,
   cvssChip,
   caseActions,
+  logo,
+  labels,
+  STATUS_ORDER,
 } from './render/common.js';
 import { renderCase } from './render/case.js';
 import { renderHome } from './render/home.js';
@@ -25,6 +44,10 @@ import { setupSettings } from './settings.js';
 
 const $ = (s) => document.querySelector(s);
 const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const applePlatform = /^(Mac|iPhone|iPad|iPod)/i.test(navigator.userAgentData?.platform || navigator.platform || '');
+const searchChord = applePlatform ? '⌘K' : 'Ctrl+K';
+const caseEntryForm = $('#case-entry-form');
+const caseInput = $('#cve-input');
 
 const loaded = await loadWorkspace();
 let state = loaded.state,
@@ -254,8 +277,17 @@ function caseAction(e) {
     c = state.cases.find((c) => c.id === id);
   if (!c) return true;
   if (b.dataset.share) shareCase(c);
-  else if (b.dataset.archive) setArchived(c, !c.archived);
-  else if (confirm(`Delete ${id}?`)) {
+  else if (b.dataset.archive) {
+    const homeRow = b.closest('.home-case-entry');
+    const next = homeRow?.nextElementSibling || homeRow?.previousElementSibling;
+    const nextId = next?.querySelector('[data-case]')?.dataset.case;
+    const restoreFocus = homeRow && b === document.activeElement;
+    setArchived(c, !c.archived);
+    if (restoreFocus) {
+      const target = (nextId && $(`.home-case[data-case="${nextId}"]`)) || $('.home-case') || caseInput;
+      target.focus();
+    }
+  } else if (confirm(`Delete ${id}?`)) {
     state.cases = state.cases.filter((x) => x.id !== id);
     if (active === id) active = null;
     save();
@@ -269,17 +301,14 @@ function caseAction(e) {
 function caseEntry(c) {
   const s = caseStatus(c),
     description = esc(`Selected OS versions: ${statusDescription(c)}`),
-    archived = Boolean(c.archived),
-    current = active === c.id;
+    archived = Boolean(c.archived);
   const icon = `<span class="case-status ${s}" role="img" aria-label="${description}">${statusSymbols[s]}</span>`;
-  const unread =
-    hasCaseUpdate(state, c) && !archived ? '<span class="case-update" aria-label="Unread update">New</span>' : '';
   return [
     `<div class="case-entry ${archived ? 'archived' : ''}">`,
-    `<button type="button" class="case-item ${current ? 'selected' : ''}" data-case="${c.id}" ${current ? 'aria-current="page"' : ''} >`,
-    `<span class="case-id">${icon}${c.id}${cvssChip(sum(c.record, state.cvss))}${unread}</span>`,
+    `<button type="button" class="case-item" data-case="${c.id}">`,
+    `<span class="case-id">${icon}${c.id}${cvssChip(sum(c.record, state.cvss))}<span class="case-update" aria-label="Unread update" hidden>New</span></span>`,
     `<small>${esc(c.record ? sum(c.record, state.cvss).title : c.savedTitle || 'Awaiting lookup')}</small>`,
-    statusBar(c),
+    statusBar(c, { showChecked: true }),
     '</button>',
     caseActions(c),
     '</div>',
@@ -295,29 +324,80 @@ function brokenEntry(c) {
   ].join('');
 }
 const entry = (c) => safely(() => caseEntry(c), brokenEntry(c));
-function renderSidebar() {
-  const q = $('#search').value.trim().toLowerCase(),
-    match = (c) => safely(() => matchesCase(c, q), false);
-  const cases = sortedCases(state)
-      .filter(match)
-      .sort((a, b) => (q ? searchRelevance(b, q) - searchRelevance(a, q) : 0)),
-    open = cases.filter((c) => !c.archived),
-    archived = cases.filter((c) => c.archived);
-  $('#case-count').textContent = state.cases.filter((c) => !c.archived).length;
-  // Show archived matches while searching and keep the open case visible.
-  const showArchived = archivedOpen || Boolean(q);
-  $('#case-list').innerHTML =
-    open.map(entry).join('') || `<p class="sidebar-empty">${q ? 'No matching cases.' : 'No open cases.'}</p>`;
-  applyBars($('#case-list'));
-  $('#archived-list').hidden = !archived.length;
-  if (!archived.length) {
-    $('#archived-list').innerHTML = '';
+// Keep unchanged rows mounted so selection does not restart their hover transition or drop focus.
+const entryMarkup = new WeakMap();
+function renderSidebarEntries(list, cases, empty = '') {
+  const previous = new Map([...list.children].map((row) => [row.querySelector('[data-case]')?.dataset.case, row]));
+  if (!cases.length) {
+    if (list.textContent !== empty || list.children.length !== Number(Boolean(empty))) {
+      list.replaceChildren();
+      if (empty) {
+        const message = document.createElement('p');
+        message.className = 'sidebar-empty';
+        message.textContent = empty;
+        list.append(message);
+      }
+    }
     return;
   }
-  const toggle = `<button type="button" class="archive-toggle" aria-expanded="${showArchived}">${icons.chevron}Archived <span>${archived.length}</span></button>`;
-  const entries = showArchived ? `<div class="archived-entries">${archived.map(entry).join('')}</div>` : '';
-  $('#archived-list').innerHTML = toggle + entries;
-  applyBars($('#archived-list'));
+  const ids = new Set(cases.map((c) => c.id));
+  for (const [id, row] of previous) if (!ids.has(id)) row.remove();
+  let next = list.firstElementChild;
+  for (const c of cases) {
+    const markup = entry(c);
+    let row = previous.get(c.id);
+    if (!row || entryMarkup.get(row) !== markup) {
+      const template = document.createElement('template');
+      template.innerHTML = markup;
+      const updated = template.content.firstElementChild;
+      if (row) {
+        if (next === row) next = updated;
+        row.replaceWith(updated);
+      }
+      row = updated;
+      entryMarkup.set(row, markup);
+      applyBars(row);
+    }
+    if (row !== next) list.insertBefore(row, next);
+    next = row.nextElementSibling;
+    const item = row.querySelector('.case-item');
+    item.classList.toggle('selected', active === c.id);
+    if (active === c.id) item.setAttribute('aria-current', 'page');
+    else item.removeAttribute('aria-current');
+    const unread = row.querySelector('.case-update');
+    if (unread) unread.hidden = c.archived || !hasCaseUpdate(state, c);
+  }
+}
+function updateSidebarCheckTimes() {
+  const now = Date.now();
+  for (const time of document.querySelectorAll('.sidebar [data-checked-at]')) {
+    const text = 'Checked ' + ago(Number(time.dataset.checkedAt), now);
+    if (time.textContent !== text) time.textContent = text;
+  }
+}
+function renderSidebar() {
+  const q = $('#search').value.trim().toLowerCase();
+  const cases = sortedCases(state)
+    .filter((c) => safely(() => matchesCase(c, q), false))
+    .sort((a, b) => (q ? searchRelevance(b, q) - searchRelevance(a, q) : 0));
+  const open = cases.filter((c) => !c.archived);
+  const archived = cases.filter((c) => c.archived);
+  $('#case-count').textContent = state.cases.filter((c) => !c.archived).length;
+  renderSidebarEntries($('#case-list'), open, q ? 'No matching open cases.' : 'No open cases.');
+  const archive = $('#archived-list');
+  const expanded = archivedOpen || Boolean(q);
+  archive.hidden = !archived.length;
+  if (archived.length && !archive.firstElementChild) {
+    archive.innerHTML = `<button type="button" class="archive-toggle">${icons.chevron}Archived <span></span></button><div class="archived-entries"></div>`;
+  }
+  if (archive.firstElementChild) {
+    archive.firstElementChild.setAttribute('aria-expanded', String(expanded));
+    archive.querySelector('.archive-toggle span').textContent = archived.length;
+    const entries = archive.querySelector('.archived-entries');
+    entries.hidden = !expanded;
+    renderSidebarEntries(entries, expanded ? archived : []);
+  }
+  updateSidebarCheckTimes();
 }
 function setArchived(c, archived) {
   const full = !archived && capacityMessage(true);
@@ -369,30 +449,31 @@ function render() {
   renderSidebar();
   const main = $('#main'),
     c = state.cases.find((c) => c.id === active);
-  const homeInput = $('#home-input'),
-    homeDraft = homeInput?.value,
-    homeFocused = document.activeElement === homeInput,
-    selection = homeFocused ? [homeInput.selectionStart, homeInput.selectionEnd] : null;
+  const fieldFocused = document.activeElement === caseInput;
+  const selection = fieldFocused ? [caseInput.selectionStart, caseInput.selectionEnd] : null;
   const open = new Set([...main.querySelectorAll('details[data-detail][open]')].map((d) => d.dataset.detail));
+  let viewFailed = false;
   try {
     main.innerHTML = c ? renderCase(c, context()) : renderHome(context(), homeFilter);
   } catch (e) {
     console.error(e);
     main.innerHTML = renderFailure(c);
-    return;
+    viewFailed = true;
   }
   for (const d of main.querySelectorAll('details[data-detail]')) if (open.has(d.dataset.detail)) d.open = true;
   applyBars(main);
-  if (c) bindCase(c);
-  else {
-    bindHome();
-    if (homeDraft) $('#home-input').value = homeDraft;
-    if (homeFocused || document.activeElement === document.body) focusHome();
-    if (selection) $('#home-input')?.setSelectionRange(...selection);
+  const sidebarSlot = $('#sidebar-case-entry');
+  const slot = $('#home-case-entry-slot') || sidebarSlot;
+  sidebarSlot.hidden = slot !== sidebarSlot;
+  if (caseEntryForm.parentElement !== slot) slot.append(caseEntryForm);
+  if (c && !viewFailed) bindCase(c);
+  if (fieldFocused || (!c && document.activeElement === document.body)) {
+    focusCaseInput();
+    if (selection) caseInput.setSelectionRange(...selection);
   }
 }
-function focusHome() {
-  if (!active && !document.querySelector('dialog[open]')) $('#home-input')?.focus({ preventScroll: true });
+function focusCaseInput() {
+  if (!document.querySelector('dialog[open]')) caseInput.focus({ preventScroll: true });
 }
 // Fallback when a view throws (for example on damaged saved data).
 function renderFailure(c) {
@@ -424,12 +505,6 @@ function bindCase(c) {
     render();
     $(`#case-products input[value="${e.target.value}"]`)?.focus();
     refresh(c);
-  };
-}
-function bindHome() {
-  $('#home-form').onsubmit = (e) => {
-    e.preventDefault();
-    openFromText($('#home-input').value, $('#home-error'));
   };
 }
 // One delegated handler for both views.
@@ -475,11 +550,6 @@ function openCase(id) {
   markCaseRead(state, id);
   save();
   render();
-}
-function openAdd() {
-  $('#add-error').textContent = '';
-  $('#add-dialog').showModal();
-  $('#cve-input').focus();
 }
 // Returns false when the case could not be opened (limits); the message goes to `error` or a toast.
 async function addCase(id, error = null) {
@@ -544,7 +614,8 @@ async function refresh(c, force = false) {
   } finally {
     busy.delete(c.id);
     save();
-    if (active === c.id) render();
+    // The home page summarizes every case, so it re-renders too.
+    if (active === c.id || !active) render();
     else renderSidebar();
     if (JSON.stringify(requestedProducts) !== JSON.stringify(c.products)) refresh(c);
   }
@@ -552,11 +623,15 @@ async function refresh(c, force = false) {
 
 // Sidebar resizing
 const resizeHandle = $('#sidebar-resize');
+const SIDEBAR_MIN = 300;
+const SIDEBAR_DEFAULT = 320;
+const SIDEBAR_MAX = 480;
 function sidebarWidth(value, persist = false) {
-  const max = Math.min(480, Math.max(220, window.innerWidth - 420));
-  const width = Math.round(Math.max(220, Math.min(max, Number(value) || 265)));
+  const max = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, window.innerWidth - 420));
+  const width = Math.round(Math.max(SIDEBAR_MIN, Math.min(max, Number(value) || SIDEBAR_DEFAULT)));
   document.documentElement.style.setProperty('--sidebar-width', `${width}px`);
   resizeHandle.setAttribute('aria-valuenow', width);
+  resizeHandle.setAttribute('aria-valuetext', `${width} pixels`);
   resizeHandle.setAttribute('aria-valuemax', max);
   if (persist) {
     state.sidebarWidth = width;
@@ -564,22 +639,25 @@ function sidebarWidth(value, persist = false) {
   }
 }
 sidebarWidth(state.sidebarWidth);
-let resizing = false;
+let resizeStart = null;
 resizeHandle.onpointerdown = (e) => {
   if (e.button !== 0) return;
   e.preventDefault();
-  resizing = true;
+  resizeHandle.focus({ preventScroll: true });
+  resizeStart = { x: e.clientX, width: Number(resizeHandle.getAttribute('aria-valuenow')) };
   resizeHandle.setPointerCapture(e.pointerId);
   document.body.classList.add('resizing-sidebar');
 };
 resizeHandle.onpointermove = (e) => {
-  if (resizing) sidebarWidth(e.clientX);
+  if (resizeStart) sidebarWidth(resizeStart.width + e.clientX - resizeStart.x);
 };
 function finishResize() {
-  if (!resizing) return;
-  resizing = false;
+  if (!resizeStart) return;
+  const initialWidth = resizeStart.width;
+  resizeStart = null;
   document.body.classList.remove('resizing-sidebar');
-  sidebarWidth(resizeHandle.getAttribute('aria-valuenow'), true);
+  const width = Number(resizeHandle.getAttribute('aria-valuenow'));
+  if (width !== initialWidth) sidebarWidth(width, true);
 }
 resizeHandle.onpointerup = finishResize;
 resizeHandle.onpointercancel = finishResize;
@@ -587,13 +665,13 @@ resizeHandle.onlostpointercapture = finishResize;
 resizeHandle.onkeydown = (e) => {
   const current = Number(resizeHandle.getAttribute('aria-valuenow')),
     step = e.shiftKey ? 40 : 10;
-  const values = { ArrowLeft: current - step, ArrowRight: current + step, Home: 220, End: 480 };
+  const values = { ArrowLeft: current - step, ArrowRight: current + step, Home: SIDEBAR_MIN, End: SIDEBAR_MAX };
   if (e.key in values) {
     e.preventDefault();
     sidebarWidth(values[e.key], true);
   }
 };
-resizeHandle.ondblclick = () => sidebarWidth(265, true);
+resizeHandle.ondblclick = () => sidebarWidth(SIDEBAR_DEFAULT, true);
 window.addEventListener('resize', () => sidebarWidth(state.sidebarWidth));
 
 // Settings
@@ -650,123 +728,151 @@ $('#disclaimer-accept').onclick = () => {
   state.disclaimerAccepted = DISCLAIMER_VERSION;
   save();
   disclaimer.close();
-  focusHome();
+  focusCaseInput();
 };
 
 // Global controls
-$('#new-case').onclick = openAdd;
+$('#search-chord').textContent = searchChord;
+$('#search').title = `Search your cases (S or ${searchChord})`;
+caseInput.title = 'Open a case (/)';
+caseInput.setAttribute('aria-keyshortcuts', '/');
+$('#search').setAttribute('aria-keyshortcuts', applePlatform ? 'S Meta+K' : 'S Control+K');
 let searchField = null;
-const filterLabels = { os: 'Operating system', version: 'OS version', status: 'Status' };
+let searchFamily = null;
+const filterPanel = $('#search-filter-panel');
+const filterOptions = $('#search-options');
+const filterBack = $('#back-search-filter');
+const filterButtons = [...document.querySelectorAll('[data-search-field]')];
+const filterTrigger = () => filterButtons.find((b) => b.dataset.searchField === searchField);
+
+function filterChoice(label, token, icon = '', selected = false) {
+  return `<button type="button" data-search-token="${token}" aria-pressed="${selected}"><span class="filter-icon">${icon}</span><span>${esc(label)}</span><span aria-hidden="true">${selected ? '✓' : ''}</span></button>`;
+}
 function renderSearchOptions() {
-  if (!searchField) return;
-  const needle = $('#filter-options-input').value;
-  const suggestions = searchSuggestions(searchField + ':' + needle);
-  $('#search-options').innerHTML =
-    suggestions
-      .map((s) => {
-        const token = s.value.trim();
-        const chosen = $('#search').value.split(/\s+/).includes(token);
-        return `<button type="button" role="option" aria-selected="${chosen}" data-search-token="${esc(token)}"><span class="filter-check" aria-hidden="true">${chosen ? '✓' : ''}</span><span>${esc(s.label)}</span></button>`;
-      })
-      .join('') || '<p>No matching options.</p>';
+  const query = $('#search').value;
+  const selected = (field, id) => selectedSearchFilter(query, field, id);
+  const family = VENDORS.find((v) => v.id === searchFamily);
+  filterBack.hidden = !family;
+  $('#search-filter-title').textContent = family?.name || (searchField === 'os' ? 'Operating system' : 'Status');
+  if (family) {
+    filterOptions.innerHTML =
+      filterChoice('Any version', `os:${family.id}`, logo(family.id), selected('os', family.id)) +
+      PRODUCTS.filter((p) => p.family === family.id)
+        .map((p) => filterChoice(p.name, `version:${p.id}`, logo(family.id), selected('version', p.id)))
+        .join('');
+  } else if (searchField === 'os') {
+    filterOptions.innerHTML =
+      filterChoice('All operating systems', '', '', replaceSearchFilter(query, 'os') === query.trim()) +
+      VENDORS.map(
+        (v) =>
+          `<button type="button" data-search-family="${v.id}"><span class="filter-icon">${logo(v.id)}</span><span>${esc(v.name)}</span>${icons.chevron}</button>`,
+      ).join('');
+  } else {
+    filterOptions.innerHTML =
+      filterChoice('All statuses', '', '', replaceSearchFilter(query, 'status') === query.trim()) +
+      STATUS_ORDER.map((status) => {
+        const key = status === 'fix_available' ? 'fixed' : status;
+        return filterChoice(
+          labels[status],
+          `status:${key}`,
+          `<span class="filter-status-dot ${status}"></span>`,
+          selected('status', key),
+        );
+      }).join('');
+  }
+}
+function focusFilterChoice() {
+  (filterOptions.querySelector('[aria-pressed="true"]') || filterOptions.querySelector('button'))?.focus();
 }
 function openSearchFilter(field) {
   searchField = field;
-  $('#search-filter-title').textContent = 'Filter by ' + filterLabels[field].toLowerCase();
-  $('#filter-options-input').value = '';
-  $('#search-filter-panel').hidden = false;
-  for (const button of document.querySelectorAll('[data-search-field]'))
+  searchFamily = null;
+  filterPanel.hidden = false;
+  for (const button of filterButtons)
     button.setAttribute('aria-expanded', String(button.dataset.searchField === field));
   renderSearchOptions();
-  $('#filter-options-input').focus();
+  focusFilterChoice();
 }
-function showSearchOptions() {
-  // Typed qualifiers expose the same focused dropdown as the filter buttons.
-  const field = $('#search').value.match(/(?:^|\s)(os|version|status):([^\s]*)$/i);
-  if (!field) return;
-  searchField = field[1].toLowerCase();
-  $('#search-filter-title').textContent = 'Filter by ' + filterLabels[searchField].toLowerCase();
-  $('#filter-options-input').value = field[2];
-  $('#search-filter-panel').hidden = false;
-  for (const button of document.querySelectorAll('[data-search-field]'))
-    button.setAttribute('aria-expanded', String(button.dataset.searchField === searchField));
-  renderSearchOptions();
-}
-function hideSearchOptions() {
-  $('#search-filter-panel').hidden = true;
-  for (const button of document.querySelectorAll('[data-search-field]')) button.setAttribute('aria-expanded', 'false');
+function hideSearchOptions(restoreFocus = false) {
+  if (filterPanel.hidden) return;
+  filterPanel.hidden = true;
+  for (const button of filterButtons) button.setAttribute('aria-expanded', 'false');
+  if (restoreFocus) filterTrigger()?.focus();
 }
 function updateSearch() {
-  $('#clear-search').hidden = !$('#search').value;
+  const query = $('#search').value;
+  $('#clear-search').hidden = !query;
+  // An active picker shows its choice ("RHEL 9", "Affected") instead of the field name.
+  for (const button of filterButtons) {
+    const label = searchFilterLabel(query, button.dataset.searchField);
+    const text = button.querySelector('.filter-label');
+    text.textContent = label || text.dataset.default;
+    button.classList.toggle('filter-active', Boolean(label));
+  }
   renderSidebar();
 }
 $('#search').oninput = () => {
+  hideSearchOptions();
   updateSearch();
-  showSearchOptions();
 };
 $('#search').onkeydown = (e) => {
-  if (e.key === 'Escape') {
+  if (e.key === 'Escape' && !filterPanel.hidden) {
     e.preventDefault();
     hideSearchOptions();
-  }
-  if (e.key === 'ArrowDown') {
+  } else if (e.key === 'ArrowDown') {
     e.preventDefault();
-    openSearchFilter(searchField || 'os');
+    openSearchFilter('os');
   }
 };
-for (const button of document.querySelectorAll('[data-search-field]'))
+for (const button of filterButtons) {
   button.onclick = () => {
-    if (!$('#search-filter-panel').hidden && searchField === button.dataset.searchField) hideSearchOptions();
+    if (!filterPanel.hidden && searchField === button.dataset.searchField) hideSearchOptions(true);
     else openSearchFilter(button.dataset.searchField);
   };
-$('#filter-options-input').oninput = renderSearchOptions;
-$('#filter-options-input').onkeydown = (e) => {
-  if (e.key === 'ArrowDown') {
-    e.preventDefault();
-    $('#search-options button')?.focus();
+}
+filterOptions.onclick = (e) => {
+  const family = e.target.closest('[data-search-family]');
+  if (family) {
+    searchFamily = family.dataset.searchFamily;
+    renderSearchOptions();
+    focusFilterChoice();
+    return;
   }
-};
-$('#search-options').onclick = (e) => {
   const button = e.target.closest('[data-search-token]');
   if (!button) return;
-  const token = button.dataset.searchToken;
-  const old = $('#search').value.match(/(?:[^\s"]+|"[^"]*(?:"|$))+/g) || [];
-  const selected = old.includes(token);
-  const rest = old.filter((word) => !word.toLowerCase().startsWith(searchField + ':'));
-  if (!selected) rest.push(token);
-  $('#search').value = rest.join(' ');
+  const input = $('#search');
+  input.value = replaceSearchFilter(input.value, searchField, button.dataset.searchToken);
   updateSearch();
-  hideSearchOptions();
-  $('#search').focus();
+  hideSearchOptions(true);
 };
-$('#search-filter-panel').onkeydown = (e) => {
-  const buttons = [...$('#search-options').querySelectorAll('button')],
-    i = buttons.indexOf(document.activeElement);
-  if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && i >= 0) {
+filterPanel.onkeydown = (e) => {
+  const buttons = [...filterOptions.querySelectorAll('button')];
+  const current = buttons.indexOf(document.activeElement);
+  if (e.key === 'Escape') {
     e.preventDefault();
-    buttons[(i + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus();
-  } else if (e.key === 'Escape') {
+    hideSearchOptions(true);
+  } else if (current >= 0 && ['ArrowDown', 'ArrowUp'].includes(e.key)) {
     e.preventDefault();
-    hideSearchOptions();
-    document.querySelector(`[data-search-field="${searchField}"]`)?.focus();
+    buttons[(current + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus();
   }
 };
-$('#close-search-filter').onclick = () => {
-  hideSearchOptions();
-  document.querySelector(`[data-search-field="${searchField}"]`)?.focus();
+filterBack.onclick = () => {
+  const family = searchFamily;
+  searchFamily = null;
+  renderSearchOptions();
+  filterOptions.querySelector(`[data-search-family="${family}"]`)?.focus();
 };
-document.addEventListener('pointerdown', (e) => {
-  if (!$('.search-area').contains(e.target)) hideSearchOptions();
+$('#close-search-filter').onclick = () => hideSearchOptions(true);
+// Collapse after outside clicks so the in-flow panel cannot move a case before its click lands.
+// composedPath() is recorded at dispatch: choosing a family re-renders the options, so the
+// clicked button is no longer in the document when this listener runs.
+document.addEventListener('click', (e) => {
+  if (!e.composedPath().includes($('.search-area'))) hideSearchOptions();
 });
-$('.search-area').addEventListener('focusout', () =>
-  setTimeout(() => {
-    if (!$('.search-area').contains(document.activeElement)) hideSearchOptions();
-  }, 0),
-);
 $('#clear-search').onclick = () => {
   $('#search').value = '';
-  updateSearch();
   hideSearchOptions();
+  updateSearch();
   $('#search').focus();
 };
 $('#case-list').onclick = $('#archived-list').onclick = (e) => {
@@ -783,7 +889,7 @@ $('#case-list').onclick = $('#archived-list').onclick = (e) => {
 function openFromText(text, error) {
   const ids = extractCveIds(text).filter(validId);
   if (!ids.length) {
-    error.textContent = 'No CVE ID found. Paste an ID such as CVE-2024-3094 or a link that contains one.';
+    error.textContent = 'No CVE ID found. Try CVE-2024-3094 or an advisory link.';
     return false;
   }
   const full = !state.cases.some((c) => c.id === ids[0]) && capacityMessage();
@@ -795,12 +901,14 @@ function openFromText(text, error) {
   if (ids.length > 1) setTimeout(() => toast(`Found ${ids.length} CVE IDs; opened ${ids[0]}.`), 50);
   return true;
 }
-$('#add-form').onsubmit = (e) => {
+caseEntryForm.querySelector('form').onsubmit = (e) => {
   e.preventDefault();
-  if (openFromText($('#cve-input').value, $('#add-error'))) {
-    $('#add-dialog').close();
-    $('#cve-input').value = '';
-  }
+  const error = $('#add-error');
+  error.textContent = '';
+  if (openFromText(caseInput.value, error)) caseInput.value = '';
+};
+caseInput.oninput = () => {
+  $('#add-error').textContent = '';
 };
 for (const b of document.querySelectorAll('[data-close]')) {
   b.onclick = () => document.getElementById(b.dataset.close).close();
@@ -813,7 +921,7 @@ $('.brand').onclick = (e) => {
   if (previous && !previous.hasUpdate) delete previous.changedRows;
   active = null;
   render();
-  focusHome();
+  focusCaseInput();
 };
 document.addEventListener('keydown', (e) => {
   const key = e.key.toLowerCase(),
@@ -822,18 +930,44 @@ document.addEventListener('keydown', (e) => {
       ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName) ||
       document.activeElement.isContentEditable;
   if (document.querySelector('dialog[open]') || e.altKey || e.isComposing) return;
-  if ((mod && key === 'k') || (key === 's' && !mod && !typing)) {
+  if (
+    ((applePlatform ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey) && key === 'k') ||
+    (key === 's' && !mod && !typing)
+  ) {
     e.preventDefault();
     $('#search').focus();
     $('#search').select();
-    showSearchOptions();
     return;
   }
   if (key === '/' && !mod && !typing) {
     e.preventDefault();
-    openAdd();
+    focusCaseInput();
   }
 });
+
+// Sidebar connection indicator: a slowly breathing green dot while the server answers, a red
+// warning once a request failed more recently than the last answer.
+function renderConnection() {
+  const el = $('#connection-status');
+  const { lastOk, lastFailure } = connection;
+  const status = lastFailure > lastOk ? 'offline' : lastOk ? 'online' : 'pending';
+  const text = { online: 'Cases re-checked hourly', offline: 'Server not responding', pending: 'Connecting…' }[status];
+  el.className = `connection ${status}`;
+  if (el.querySelector('.connection-text').textContent !== text)
+    el.querySelector('.connection-text').textContent = text;
+  el.title = {
+    online: `Server reachable (last answer ${time(lastOk)}). Your cases are stored in this browser; the server re-checks them every hour.`,
+    offline: `No answer from the server${lastOk ? ` since ${time(lastOk)}` : ''}. Showing saved data; retrying automatically.`,
+    pending: 'Contacting the server…',
+  }[status];
+}
+onConnectionChange(renderConnection);
+const checkConnection = () => {
+  if (!document.hidden) ping();
+};
+setInterval(checkConnection, 120000);
+document.addEventListener('visibilitychange', checkConnection);
+window.addEventListener('offline', () => reportContact(false));
 
 // Hourly catch-up while open and on returning to the tab (never a forced refresh).
 async function catchUp() {
@@ -842,7 +976,10 @@ async function catchUp() {
     if (Date.now() - Math.max(c.apiChecked || 0, c.attempted || 0) >= HOUR) await refresh(c);
   }
 }
-setInterval(catchUp, 60000);
+setInterval(() => {
+  updateSidebarCheckTimes();
+  catchUp();
+}, 60000);
 setInterval(() => syncWatchlist(true), 300000);
 document.addEventListener('visibilitychange', catchUp);
 window.addEventListener('online', () => {

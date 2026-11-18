@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { matchesCase, searchRelevance, searchSuggestions } from '../src/search.js';
+import {
+  matchesCase,
+  replaceSearchFilter,
+  selectedSearchFilter,
+  searchRelevance,
+  searchFilterLabel,
+} from '../src/search.js';
 import { statusBar } from '../src/render/common.js';
 
 const c = {
@@ -28,25 +34,45 @@ test('plain search finds case details, package evidence, selected versions and a
   assert.ok(searchRelevance(c, 'kernel') > searchRelevance(c, 'cluster'));
 });
 
-test('suggestions span all categories and replace only the active token', () => {
-  assert.equal(new Set(searchSuggestions('').map((s) => s.group)).size, 3);
-  assert.ok(searchSuggestions('kernel os:').every((s) => s.value.startsWith('kernel os:')));
-  assert.equal(searchSuggestions('kernel -version:noble')[0].value, 'kernel -version:ubuntu2404 ');
-  assert.equal(searchSuggestions('STATUS:fix')[0].value, 'status:fixed ');
+test('filter pills name the chosen OS family, version or status', () => {
+  assert.equal(searchFilterLabel('kernel os:rhel', 'os'), 'RHEL');
+  assert.equal(searchFilterLabel('version:ubuntu2404 status:fixed', 'os'), 'Ubuntu 24.04');
+  assert.equal(searchFilterLabel('version:ubuntu2404 status:fixed', 'status'), 'Fix available');
+  assert.equal(searchFilterLabel('-status:affected kernel', 'status'), '');
+  assert.equal(searchFilterLabel('os:typo', 'os'), '');
 });
 
-test('status bar keeps the OS total beside compact colored labels above the bar', () => {
-  const bar = statusBar(c);
-  assert.equal((bar.match(/class="status-chip /g) || []).length, 3);
+test('the OS picker replaces both OS qualifiers while keeping terms, exclusions and status', () => {
+  const query = '"db cluster" OS:"Red Hat" version:rhel9 -os:debian status:unknown';
+  const next = replaceSearchFilter(query, 'os', 'version:ubuntu2404');
+  assert.equal(next, '"db cluster" -os:debian status:unknown version:ubuntu2404');
+  assert.equal(replaceSearchFilter(next, 'os'), '"db cluster" -os:debian status:unknown');
+  assert.equal(
+    replaceSearchFilter(next, 'status', 'status:fixed'),
+    '"db cluster" -os:debian version:ubuntu2404 status:fixed',
+  );
+  assert.equal(selectedSearchFilter(query, 'os', 'rhel'), true);
+  assert.equal(selectedSearchFilter(query, 'os', 'debian'), false);
+});
+
+test('status bar shows each status with one stacked logo per OS family, in segment order', () => {
+  const two = { ...c, products: ['rhel9', 'rhel10', 'ubuntu2404', 'debian13'], apiChecked: 1234 };
+  const bar = statusBar(two, { showChecked: true });
+  assert.equal((bar.match(/class="status-group"/g) || []).length, 2);
+  // RHEL 9 and 10 share one logo with a count; versions stay in the tooltip and label.
+  assert.equal((bar.match(/class="stack-logo"/g) || []).length, 3);
+  assert.match(bar, /title="RHEL 9, RHEL 10"><img[^>]*logo-rhel[^>]*><span class="stack-count">2<\/span>/);
+  assert.match(bar, /Fix available<\/span><span class="logo-stack" role="img" aria-label="Ubuntu 24.04"/);
+  assert.match(bar, /No data<\/span><span class="logo-stack" role="img" aria-label="RHEL 9, RHEL 10, Debian 13"/);
+  assert.ok(bar.indexOf('Fix available') < bar.indexOf('No data'));
   assert.match(
     bar,
-    /class="status-chip fix_available">.*Ubuntu 24.04<\/span><span class="visually-hidden"> — Fix available/,
+    /class="status-bar"[^>]*><span class="fix_available" data-flex="1"><\/span><span class="unknown" data-flex="3">/,
   );
-  assert.match(bar, /3 OSs<\/span><span class="status-track"><span class="status-breakdown">/);
-  assert.ok(bar.indexOf('class="status-breakdown"') < bar.indexOf('class="status-bar"'));
-  assert.match(statusBar({ ...c, products: ['rhel9'] }), /1 selected OS version"[^>]*>1 OS<\/span>/);
+  assert.match(bar, /data-checked-at="1234"/);
+  assert.doesNotMatch(statusBar(c), /data-checked-at/);
+  assert.match(bar, /4 OS versions/);
+  assert.match(statusBar({ ...c, products: ['rhel9'] }), />1 OS version<\/span>/);
   assert.equal(statusBar({ ...c, products: [] }), '');
-  assert.doesNotMatch(bar, /status-breakdown-row/);
-  assert.match(bar, /3 selected OS versions/);
-  assert.doesNotMatch(bar, /title=|tabindex=|<button|<details/);
+  assert.doesNotMatch(bar, /tabindex=|<button|<details/);
 });

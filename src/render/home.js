@@ -10,6 +10,7 @@ import {
   caseStatus,
   statusDescription,
   statusBar,
+  archiveCaseAction,
   cvssChip,
 } from './common.js';
 
@@ -49,6 +50,8 @@ function homeCaseRow(c, ctx) {
     `<small>Checked ${ago(c.apiChecked || c.checked, ctx.now)}</small>`,
     '</span>',
     '</button>',
+    // Top right like the sidebar's actions, shown on hover, so it never moves with the meter.
+    `<span class="case-actions">${archiveCaseAction(c)}</span>`,
     '</div>',
   ].join('');
 }
@@ -57,14 +60,18 @@ function homeCaseRow(c, ctx) {
 export const tagline = (tmdsOn) =>
   `Check whether a vulnerability is fixed for the OS versions you run — vendor status, fixed packages${tmdsOn ? ' and Trend Micro Deep Security kernel support' : ' and mitigations'}, in one place.`;
 
-function homeHero(open, attention, ctx) {
+function heroTitle(open, attention, statuses, ctx) {
   const n = attention.length;
-  let title = 'Check a vulnerability',
-    lede = 'Paste a CVE ID or any advisory link to open a case.';
-  if (open.length) {
-    title = n ? `${plural(n, 'case')} need${n > 1 ? '' : 's'} a look` : 'All clear for now';
-    lede = ctx.state.auto ? 'Cases are re-checked every hour.' : 'Cases are checked when you open them.';
-  }
+  if (!open.length) return 'Check a vulnerability';
+  if (n) return `${plural(n, 'case')} need${n > 1 ? '' : 's'} a look`;
+  // "All clear" only once every open case has been looked up and has a vendor verdict.
+  if (open.some((c) => ctx.busy.has(c.id) || (!c.record && !c.vendorData))) return 'Checking your cases…';
+  if (open.every((c) => statuses.get(c) === 'unknown')) return 'No vendor verdicts yet';
+  return 'All clear for now';
+}
+
+function homeHero(open, attention, statuses, ctx) {
+  const title = heroTitle(open, attention, statuses, ctx);
   const examples = EXAMPLES.map(
     (id) => `<button type="button" class="example" data-example="${id}">${id}</button>`,
   ).join('');
@@ -72,12 +79,8 @@ function homeHero(open, attention, ctx) {
     '<section class="home-hero"><div>',
     `<h1>${title}</h1>`,
     `<p class="home-tagline">${esc(tagline(ctx.tmdsOn))}</p>`,
-    `<p class="home-lede">${lede}</p>`,
-    '<form id="home-form" class="home-open">',
-    '<input id="home-input" placeholder="CVE-2024-3094 or a link that contains it" autocomplete="off" spellcheck="false" aria-label="CVE ID or link">',
-    '<button class="primary">Open case →</button>',
-    '</form>',
-    '<p id="home-error" class="error" role="alert"></p>',
+    open.length ? '' : '<p class="home-lede">Paste a CVE ID or any advisory link to open a case.</p>',
+    '<div id="home-case-entry-slot"></div>',
     open.length ? '' : `<p class="home-examples">Try ${examples}</p>`,
     '</div></section>',
   ].join('');
@@ -172,7 +175,7 @@ export function renderHome(ctx, filter) {
       (rest.length ? homeList(attention.length ? 'Other cases' : 'Your cases', rest, ctx) : '');
   }
   return [
-    homeHero(open, attention, ctx),
+    homeHero(open, attention, statuses, ctx),
     open.length ? homeStats(counts, filter, open, state) : '',
     '<div class="home-grid">',
     `<div>${lists}${open.length ? '' : howItWorks(ctx.tmdsOn)}</div>`,

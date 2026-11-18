@@ -37,23 +37,43 @@ export function statusDescription(c) {
       .join(', ') || 'No OS versions selected'
   );
 }
-// Thin bar with one segment per OS version, in status order. Segment widths are
-// applied from data-flex after rendering (no inline styles under the CSP).
-export function statusBar(c) {
+// Vendor logos for the OS versions in one status: one logo per OS family, stacked, with a
+// count when several versions of that family share the status. Versions are in the tooltip
+// and the accessible label.
+function logoStack(products) {
+  const families = new Map();
+  for (const p of products) families.set(p.family, [...(families.get(p.family) || []), p]);
+  const items = [...families].map(([family, versions]) => {
+    const count = versions.length > 1 ? `<span class="stack-count">${versions.length}</span>` : '';
+    return `<span class="stack-logo" title="${esc(versions.map(shortName).join(', '))}">${logo(family)}${count}</span>`;
+  });
+  return `<span class="logo-stack" role="img" aria-label="${esc(products.map(shortName).join(', '))}">${items.join('')}</span>`;
+}
+// Thin bar with one segment per OS version, in status order; the card reveals each status with
+// its OS logos on hover. Segment widths are applied from data-flex after rendering (no inline
+// styles under the CSP).
+export function statusBar(c, { showChecked = false } = {}) {
   const products = selected(c);
   if (!products.length) return '';
-  const rows = products.map((p) => ({ product: p, status: rowStatus(c, p) }));
-  const segments = STATUS_ORDER.map((s) => {
-    const count = rows.filter(({ status }) => status === s).length;
-    return count ? `<span class="${s}" data-flex="${count}"></span>` : '';
-  }).join('');
-  const breakdown = rows
-    .map(
-      ({ product, status }) =>
-        `<span class="status-chip ${status}">${logo(product.family)}<span>${esc(shortName(product))}</span><span class="visually-hidden"> — ${labels[status]}</span></span>`,
-    )
+  const groups = Object.fromEntries(STATUS_ORDER.map((status) => [status, []]));
+  for (const product of products) groups[rowStatus(c, product)].push(product);
+  const populated = STATUS_ORDER.filter((status) => groups[status].length);
+  const segments = populated.map((s) => `<span class="${s}" data-flex="${groups[s].length}"></span>`).join('');
+  const breakdown = populated
+    .map((s) => `<span class="status-group">${badge(s)}${logoStack(groups[s])}</span>`)
     .join('');
-  return `<span class="status-meter"><span class="status-total" aria-label="${rows.length} selected OS version${rows.length === 1 ? '' : 's'}">${rows.length} ${rows.length === 1 ? 'OS' : 'OSs'}</span><span class="status-track"><span class="status-breakdown">${breakdown}</span><span class="status-bar" aria-hidden="true">${segments}</span></span></span>`;
+  const checked = showChecked
+    ? `<small class="status-checked" data-checked-at="${Number(c.apiChecked || c.checked) || 0}"></small>`
+    : '';
+  const total = `${products.length} OS ${products.length === 1 ? 'version' : 'versions'}`;
+  return [
+    '<span class="status-meter">',
+    `<span class="status-total">${total}</span>`,
+    '<span class="status-track">',
+    `<span class="status-breakdown"><span class="status-groups">${breakdown}</span>${checked}</span>`,
+    `<span class="status-bar" aria-hidden="true">${segments}</span>`,
+    '</span></span>',
+  ].join('');
 }
 export function cvssChip(s) {
   if (s.score == null) return '';
@@ -61,16 +81,21 @@ export function cvssChip(s) {
   return `<span class="cvss ${severity}" title="CVSS ${esc(s.cvssVersion)} · ${severity}">${esc(s.score.toFixed(1))}</span>`;
 }
 
-// Share, archive and delete; used by the sidebar and the home page.
+// Case actions sit alongside the case-opening button.
 const iconButton = (attrs, label, icon) =>
   `<button type="button" ${attrs} aria-label="${label}" title="${label}">${icon}</button>`;
+export function archiveCaseAction(c) {
+  return iconButton(
+    `class="archive-case-action" data-archive="${c.id}"`,
+    `${c.archived ? 'Unarchive' : 'Archive'} ${c.id}`,
+    c.archived ? icons.unarchive : icons.archive,
+  );
+}
 export function caseActions(c) {
-  const archived = Boolean(c.archived),
-    verb = archived ? 'Unarchive' : 'Archive';
   return [
     '<span class="case-actions">',
     iconButton(`data-share="${c.id}"`, `Share ${c.id}`, icons.share),
-    iconButton(`data-archive="${c.id}"`, `${verb} ${c.id}`, archived ? icons.unarchive : icons.archive),
+    archiveCaseAction(c),
     iconButton(`class="delete-case" data-delete="${c.id}"`, `Delete ${c.id}`, icons.trash),
     '</span>',
   ].join('');

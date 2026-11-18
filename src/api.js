@@ -26,16 +26,34 @@ export async function responseError(response) {
   if (retry > 0) error.retryAfter = retry;
   return error;
 }
-async function request(path, options = {}, timeout = 180000) {
-  let response;
+
+// Server reachability for the sidebar indicator. Any HTTP answer below 500 counts as contact
+// (a 404 or 429 still comes from a working server); network errors, timeouts and 5xx do not.
+export const connection = { lastOk: 0, lastFailure: 0 };
+const connectionListeners = new Set();
+export const onConnectionChange = (listener) => connectionListeners.add(listener);
+export function reportContact(ok, now = Date.now()) {
+  if (ok) connection.lastOk = now;
+  else connection.lastFailure = now;
+  for (const listener of connectionListeners) listener(connection);
+}
+async function send(target, options, timeout) {
   try {
-    response = await fetch(url(path), { ...options, signal: AbortSignal.timeout(timeout), cache: 'no-store' });
+    const response = await fetch(target, { ...options, signal: AbortSignal.timeout(timeout), cache: 'no-store' });
+    reportContact(response.status < 500);
+    return response;
   } catch {
+    reportContact(false);
     throw Error(OFFLINE);
   }
+}
+async function request(path, options = {}, timeout = 180000) {
+  const response = await send(url(path), options, timeout);
   if (!response.ok) throw await responseError(response);
   return response.json();
 }
+// Lightweight reachability check; errors are reported through the connection state only.
+export const ping = () => request('/health', {}, 10000).catch(() => null);
 
 // Server settings (GET /api/config). Unknown or missing values fall back to these.
 export const DEFAULT_CONFIG = Object.freeze({
@@ -88,15 +106,7 @@ export async function syncWatches(cases) {
 
 export async function streamCase(id, products, force, onArea) {
   const params = new URLSearchParams({ families: families(products).join(','), refresh: String(force) });
-  let response;
-  try {
-    response = await fetch(url(`/cves/${encodeURIComponent(id)}/stream?${params}`), {
-      signal: AbortSignal.timeout(180000),
-      cache: 'no-store',
-    });
-  } catch {
-    throw Error(OFFLINE);
-  }
+  const response = await send(url(`/cves/${encodeURIComponent(id)}/stream?${params}`), {}, 180000);
   if (!response.ok) throw await responseError(response);
   const reader = response.body.getReader(),
     decoder = new TextDecoder();

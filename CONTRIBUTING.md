@@ -68,8 +68,9 @@ CI runs the same commands, builds the container image and scans it with Trivy. A
 
 ## Adding a vendor source
 
-Vendor sources live in [`backend/providers.py`](backend/providers.py); the frontend maps products and statuses in
-[`src/data.js`](src/data.js) and [`src/feeds.js`](src/feeds.js).
+Vendor sources are fetched and normalized in [`backend/providers.py`](backend/providers.py); the frontend only lists
+OS products and assesses the normalized evidence in [`src/data.js`](src/data.js). (`src/feeds.js` is a test-only
+reference parser for the browser's assessment tests; the app does not use it.)
 
 1. **Pick an official, public, machine-readable source** (CSAF/VEX preferred) with a license or terms that allow
    automated access and display. Note the license in the README "Sources and licenses" table and add the vendor to

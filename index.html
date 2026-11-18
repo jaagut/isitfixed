@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-    <aside class="sidebar">
+    <aside class="sidebar" id="case-sidebar">
       <div class="sidebar-heading">
         <a class="brand" href="/"><span class="brand-icon">?/</span> Is It Fixed</a>
         <a
@@ -26,7 +26,37 @@
           ><span class="github-icon" aria-hidden="true"></span
         ></a>
       </div>
-      <button type="button" id="new-case" class="primary full">＋ Open a case <kbd>/</kbd></button>
+      <div id="sidebar-case-entry" hidden>
+        <div id="case-entry-form">
+          <form class="home-open" aria-label="Open a case">
+            <svg
+              class="case-entry-icon"
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              aria-hidden="true"
+            >
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            <input
+              id="cve-input"
+              placeholder="CVE ID or advisory link"
+              aria-label="CVE ID or advisory link"
+              aria-describedby="add-error"
+              autocomplete="off"
+              spellcheck="false"
+              required
+            />
+            <button class="primary" aria-label="Open case"><span>Open case</span> →</button>
+            <kbd aria-hidden="true">/</kbd>
+          </form>
+          <p id="add-error" class="field-error" role="alert"></p>
+        </div>
+      </div>
       <div class="search-area">
         <div class="search">
           <svg
@@ -48,41 +78,60 @@
             placeholder="Search your cases…"
             aria-label="Search your cases"
             autocomplete="off"
-            title="Search your cases (S, Ctrl+K or ⌘K)"
+            title="Search your cases (S)"
           />
-          <button type="button" id="clear-search" aria-label="Clear search" hidden>×</button
-          ><kbd class="search-shortcut" aria-hidden="true">S</kbd>
+          <button type="button" id="clear-search" aria-label="Clear search" hidden>×</button>
+          <kbd class="search-shortcut" aria-hidden="true">S</kbd>
         </div>
-        <div class="search-filters" aria-label="Filter cases">
+        <div class="search-filters" role="group" aria-label="Filter cases">
           <button type="button" data-search-field="os" aria-expanded="false" aria-controls="search-filter-panel">
-            OS <span aria-hidden="true">⌄</span>
-          </button>
-          <button type="button" data-search-field="version" aria-expanded="false" aria-controls="search-filter-panel">
-            Version <span aria-hidden="true">⌄</span>
+            <span class="filter-label" data-default="OS">OS</span>
+            <svg
+              class="filter-chevron"
+              viewBox="0 0 24 24"
+              width="12"
+              height="12"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="m6 9 6 6 6-6" />
+            </svg>
           </button>
           <button type="button" data-search-field="status" aria-expanded="false" aria-controls="search-filter-panel">
-            Status <span aria-hidden="true">⌄</span>
+            <span class="filter-label" data-default="Status">Status</span>
+            <svg
+              class="filter-chevron"
+              viewBox="0 0 24 24"
+              width="12"
+              height="12"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="m6 9 6 6 6-6" />
+            </svg>
           </button>
         </div>
         <div
           id="search-filter-panel"
           class="search-filter-panel"
-          role="dialog"
+          role="group"
           aria-labelledby="search-filter-title"
           hidden
         >
           <div class="search-filter-heading">
-            <strong id="search-filter-title">Filter cases</strong
-            ><button type="button" id="close-search-filter" aria-label="Close filter">×</button>
+            <button type="button" id="back-search-filter" aria-label="Back to operating systems" hidden>←</button>
+            <strong id="search-filter-title">Filter cases</strong>
+            <button type="button" id="close-search-filter" aria-label="Close filter">×</button>
           </div>
-          <input
-            id="filter-options-input"
-            type="search"
-            autocomplete="off"
-            aria-label="Find filter options"
-            placeholder="Find an option…"
-          />
-          <div id="search-options" class="search-options" role="listbox" aria-label="Filter options"></div>
+          <div id="search-options" class="search-options"></div>
         </div>
       </div>
       <div class="sidebar-label">YOUR CASES <span id="case-count">0</span></div>
@@ -94,18 +143,21 @@
             <span aria-hidden="true">⚙</span><span class="settings-label">Settings</span>
           </button>
         </div>
-        <p><span class="dot safe"></span> Cases stored on this device</p>
+        <p id="connection-status" class="connection pending" role="status">
+          <span class="connection-dot" aria-hidden="true"></span><span class="connection-text">Connecting…</span>
+        </p>
       </div>
       <div
         id="sidebar-resize"
         role="separator"
         aria-label="Sidebar width"
         aria-orientation="vertical"
-        aria-valuemin="220"
+        aria-controls="case-sidebar"
+        aria-valuemin="300"
         aria-valuemax="480"
-        aria-valuenow="265"
+        aria-valuenow="320"
         tabindex="0"
-        title="Drag to resize; arrow keys adjust width"
+        title="Drag to resize sidebar"
       ></div>
     </aside>
     <div class="workspace">
@@ -134,26 +186,6 @@
         </ul>
       </footer>
     </div>
-    <dialog id="add-dialog" aria-labelledby="add-title">
-      <form id="add-form">
-        <div class="dialog-heading">
-          <h2 id="add-title">Open a case</h2>
-          <button type="button" data-close="add-dialog" aria-label="Close">×</button>
-        </div>
-        <label>
-          CVE ID or link
-          <input
-            id="cve-input"
-            placeholder="CVE-2024-3094 or a URL that contains it"
-            required
-            autocomplete="off"
-            spellcheck="false"
-          />
-        </label>
-        <p id="add-error" class="error" role="alert"></p>
-        <button class="primary full" type="submit">Open case →</button>
-      </form>
-    </dialog>
     <dialog id="settings-dialog" aria-labelledby="settings-title">
       <div class="dialog-heading">
         <h2 id="settings-title">Settings</h2>
@@ -233,22 +265,9 @@
           </div>
           <div>
             <dt>Search your cases</dt>
-            <dd><kbd>S</kbd> or <kbd>Ctrl</kbd> + <kbd>K</kbd> / <kbd>⌘</kbd> + <kbd>K</kbd></dd>
-          </div>
-          <div>
-            <dt>Navigate filter options</dt>
-            <dd><kbd>↑</kbd> <kbd>↓</kbd></dd>
-          </div>
-          <div>
-            <dt>Select a filter</dt>
-            <dd><kbd>Enter</kbd></dd>
-          </div>
-          <div>
-            <dt>Close a filter or dialog</dt>
-            <dd><kbd>Esc</kbd></dd>
+            <dd><kbd>S</kbd> or <kbd id="search-chord">Ctrl+K</kbd></dd>
           </div>
         </dl>
-        <p class="settings-hint">Shortcuts are read-only. Single-key shortcuts are inactive while typing in a field.</p>
       </section>
       <section class="settings-section" aria-labelledby="settings-backup">
         <h3 id="settings-backup">Backup</h3>

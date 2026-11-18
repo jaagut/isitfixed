@@ -1,7 +1,7 @@
 // Workspace search combines saved case text with evidence for the selected OS versions.
 import { PRODUCTS, VENDORS } from './data.js';
 import { labels, STATUS_ORDER } from './render/common.js';
-import { rowStatus } from './rows.js';
+import { rowStatus, shortName } from './rows.js';
 import { caseSearchText } from './state.js';
 
 const normalize = (s) => s.toLowerCase().replace(/[\s_.-]+/g, '');
@@ -12,10 +12,15 @@ const option = (field, id, label, group, aliases = []) => ({
   group,
   names: [id, label, ...aliases].filter(Boolean).map(normalize),
 });
-const families = VENDORS.map((v) => option('os', v.id, v.name, 'OS family', [v.vendor]));
-const versions = PRODUCTS.map((p) =>
-  option('version', p.id, p.name, 'OS version', [p.code, p.version, p.version.split(' ')[0]]),
-);
+const families = VENDORS.map((v) => ({
+  ...option('os', v.id, v.name, 'OS family', [v.vendor]),
+  // "RHEL", "Debian", "SLES"…: the first word of the family's version names.
+  short: PRODUCTS.find((p) => p.family === v.id)?.name.split(' ')[0] || v.name,
+}));
+const versions = PRODUCTS.map((p) => ({
+  ...option('version', p.id, p.name, 'OS version', [p.code, p.version, p.version.split(' ')[0]]),
+  short: shortName(p),
+}));
 const statuses = STATUS_ORDER.map((s) =>
   option('status', s === 'fix_available' ? 'fixed' : s, labels[s], 'Status', [s]),
 );
@@ -23,6 +28,35 @@ const options = [...families, ...versions, ...statuses];
 const tokens = (query) => query.match(/(?:[^\s"]+|"[^"]*(?:"|$))+/g) || [];
 const fieldToken = /^(os|version|status):(.*)$/i;
 const same = (entry, value) => entry.names.includes(normalize(value));
+
+// Picker changes replace positive filters in the chosen group. Typed exclusions stay intact.
+export function replaceSearchFilter(query, group, value = '') {
+  const fields = group === 'os' ? ['os', 'version'] : ['status'];
+  const remaining = tokens(query).filter((word) => !fields.includes(word.match(fieldToken)?.[1].toLowerCase()));
+  if (value) remaining.push(value);
+  return remaining.join(' ');
+}
+
+export function selectedSearchFilter(query, field, id) {
+  return tokens(query).some((word) => {
+    const match = word.match(fieldToken);
+    if (match?.[1].toLowerCase() !== field) return false;
+    return options.some((o) => o.field === field && o.id === id && same(o, match[2].replaceAll('"', '')));
+  });
+}
+
+// Short label of the positive filter chosen in a picker group ("RHEL 9", "Affected"), or ''.
+export function searchFilterLabel(query, group) {
+  const fields = group === 'os' ? ['os', 'version'] : ['status'];
+  for (const word of tokens(query)) {
+    const match = word.match(fieldToken);
+    const field = match?.[1].toLowerCase();
+    if (!fields.includes(field)) continue;
+    const found = options.find((o) => o.field === field && same(o, match[2].replaceAll('"', '')));
+    if (found) return found.short || found.label;
+  }
+  return '';
+}
 
 // Positive row filters must all match the same selected OS version.
 export function matchesCase(c, query) {
@@ -62,31 +96,6 @@ export function matchesCase(c, query) {
     } else rowFilters.push(matches);
   }
   return !rowFilters.length || products.some((p) => rowFilters.every((filter) => filter(p)));
-}
-
-export function searchSuggestions(query) {
-  const words = tokens(query);
-  const active = /\s$/.test(query) ? '' : words.at(-1) || '';
-  const prefix = query.slice(0, query.length - active.length);
-  const negative = active.startsWith('-') ? '-' : '';
-  const term = active.slice(negative.length).replaceAll('"', '');
-  const field = term.match(fieldToken);
-  const needle = normalize(field ? field[2] : term);
-  const candidates = options
-    .filter((o) => !field || o.field === field[1].toLowerCase())
-    .map((o) => ({
-      ...o,
-      score: !needle || o.names.includes(needle) ? 0 : o.names.some((n) => n.startsWith(needle)) ? 1 : 2,
-    }))
-    .filter((o) => o.names.some((n) => n.includes(needle)))
-    .sort((a, b) => a.score - b.score);
-  // On focus show a representative set from each group; typing a qualifier exposes all its options.
-  const results = !term ? [families, versions, statuses].flatMap((group) => group.slice(0, 3)) : candidates;
-  return results.map(({ label, group, field, id }) => ({
-    label,
-    group,
-    value: prefix + negative + field + ':' + id + ' ',
-  }));
 }
 
 // Use with a stable descending sort after matching, so equally relevant cases keep their activity order.

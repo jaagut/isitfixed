@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fetchCase, syncWatches } from '../src/api.js';
+import { fetchCase, syncWatches, ping, connection, onConnectionChange } from '../src/api.js';
 test('case refresh uses only the API, including selected vendor families and force flag', async () => {
   const original = globalThis.fetch,
     calls = [];
@@ -116,6 +116,29 @@ test('API errors use the detail text; 429 says when to retry', async () => {
     globalThis.fetch = async () =>
       Response.json({ detail: 'Too many lookups.' }, { status: 429, headers: { 'Retry-After': '120' } });
     await assert.rejects(() => fetchCase('CVE-2026-98432', []), /Too many lookups\. Try again in 2 min\./);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('the connection state counts any answer below 500 as contact, and 5xx or network errors as failures', async () => {
+  const original = globalThis.fetch;
+  const seen = [];
+  onConnectionChange((c) => seen.push(c.lastFailure > c.lastOk ? 'offline' : 'online'));
+  try {
+    for (const [answer, expected] of [
+      [() => Response.json({ status: 'ok' }), 'online'],
+      [() => new Response('{}', { status: 503 }), 'offline'],
+      [() => new Response('{}', { status: 429 }), 'online'],
+      [() => Promise.reject(new TypeError('Failed to fetch')), 'offline'],
+    ]) {
+      globalThis.fetch = async () => answer();
+      await ping();
+      assert.equal(seen.at(-1), expected);
+      // Same-millisecond answers must still order correctly in the next round.
+      await new Promise((resolve) => setTimeout(resolve, 2));
+    }
+    assert.ok(connection.lastOk > 0 && connection.lastFailure > 0);
   } finally {
     globalThis.fetch = original;
   }
