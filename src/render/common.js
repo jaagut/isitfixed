@@ -37,43 +37,35 @@ export function statusDescription(c) {
       .join(', ') || 'No OS versions selected'
   );
 }
-// One status of the breakdown: a pill tinted in the status colour with the status symbol and
-// one logo per OS version (versions as tooltips). The status name is the pill's label.
-function statusGroup(status, products) {
+// One bar segment per status. Its OS logos (one per version, version as tooltip) sit on a tint
+// of the segment colour directly above the coloured strip, revealed when the card is hovered.
+function statusSegment(status, products) {
   const versions = products.map(shortName);
   const discs = products.map(
     (p, i) => `<span class="stack-logo" data-tip="${esc(versions[i])}">${logo(p.family)}</span>`,
   );
-  const label = esc(`${labels[status]}: ${versions.join(', ')}`);
   return [
-    `<span class="status-group ${status}" role="img" aria-label="${label}" data-tip="${esc(labels[status])}">`,
-    `<span class="case-status ${status}" aria-hidden="true">${statusSymbols[status]}</span>`,
-    discs.join(''),
+    `<span class="status-seg ${status}" data-flex="${products.length}" role="img" aria-label="${esc(`${labels[status]}: ${versions.join(', ')}`)}">`,
+    `<span class="seg-logos" data-tip="${esc(labels[status])}">${discs.join('')}</span>`,
+    '<span class="seg-fill"></span>',
     '</span>',
   ].join('');
 }
-// Thin bar with one segment per OS version, in status order; hovering the card reveals one line
-// above it with each status and its OS logos in the same order. Segment widths are applied from
-// data-flex after rendering (no inline styles under the CSP).
+// Status bar for a case: one segment per status in STATUS_ORDER, sized by its number of OS
+// versions. Segment growth comes from data-flex after rendering (no inline styles under the CSP).
 export function statusBar(c, { showChecked = false } = {}) {
   const products = selected(c);
   if (!products.length) return '';
   const groups = Object.fromEntries(STATUS_ORDER.map((status) => [status, []]));
   for (const product of products) groups[rowStatus(c, product)].push(product);
-  const populated = STATUS_ORDER.filter((status) => groups[status].length);
-  const segments = populated.map((s) => `<span class="${s}" data-flex="${groups[s].length}"></span>`).join('');
-  const breakdown = populated.map((s) => statusGroup(s, groups[s])).join('');
+  const segments = STATUS_ORDER.filter((s) => groups[s].length)
+    .map((s) => statusSegment(s, groups[s]))
+    .join('');
   const checked = showChecked
     ? `<small class="status-checked" data-checked-at="${Number(c.apiChecked || c.checked) || 0}"></small>`
     : '';
   const total = `${products.length} OS ${products.length === 1 ? 'version' : 'versions'}`;
-  return [
-    '<span class="status-meter">',
-    `<span class="status-breakdown"><span class="status-groups">${breakdown}</span>${checked}</span>`,
-    `<span class="status-total">${total}</span>`,
-    `<span class="status-bar" aria-hidden="true">${segments}</span>`,
-    '</span>',
-  ].join('');
+  return `<span class="status-meter"><span class="status-total">${total}</span><span class="status-bar">${segments}</span>${checked}</span>`;
 }
 export function cvssChip(s) {
   if (s.score == null) return '';

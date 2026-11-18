@@ -240,9 +240,10 @@ const context = () => ({
   groupOverride,
   now: Date.now(),
 });
-// Status bar segment widths come from data-flex (no inline style attributes under the CSP).
+// Status bar segments grow by their number of OS versions from data-flex (no inline style
+// attributes under the CSP); their base width is their logos', so logos always fit their segment.
 function applyBars(root) {
-  for (const el of root.querySelectorAll('[data-flex]')) el.style.flex = `${Number(el.dataset.flex) || 1} 1 0%`;
+  for (const el of root.querySelectorAll('[data-flex]')) el.style.flexGrow = String(Number(el.dataset.flex) || 1);
 }
 
 // Share sheet where available (mobile, some desktops); otherwise copy the link.
@@ -382,7 +383,9 @@ function renderSidebar() {
     .sort((a, b) => (q ? searchRelevance(b, q) - searchRelevance(a, q) : 0));
   const open = cases.filter((c) => !c.archived);
   const archived = cases.filter((c) => c.archived);
-  $('#case-count').textContent = state.cases.filter((c) => !c.archived).length;
+  const openCases = state.cases.filter((c) => !c.archived).length;
+  $('#case-count').textContent = openCases;
+  $('#cases-toggle-count').textContent = openCases;
   renderSidebarEntries($('#case-list'), open, q ? 'No matching open cases.' : 'No open cases.');
   const archive = $('#archived-list');
   const expanded = archivedOpen || Boolean(q);
@@ -875,6 +878,13 @@ $('#clear-search').onclick = () => {
   updateSearch();
   $('#search').focus();
 };
+// Small screens fold the case list (with search) behind a toggle and close it after a choice.
+const smallScreen = matchMedia('(max-width: 760px)');
+function setCasesOpen(open) {
+  $('.sidebar').classList.toggle('cases-open', open);
+  $('#cases-toggle').setAttribute('aria-expanded', String(open));
+}
+$('#cases-toggle').onclick = () => setCasesOpen(!$('.sidebar').classList.contains('cases-open'));
 $('#case-list').onclick = $('#archived-list').onclick = (e) => {
   if (caseAction(e)) return;
   if (e.target.closest('.archive-toggle')) {
@@ -884,7 +894,9 @@ $('#case-list').onclick = $('#archived-list').onclick = (e) => {
     return;
   }
   const b = e.target.closest('[data-case]');
-  if (b) openCase(b.dataset.case);
+  if (!b) return;
+  if (smallScreen.matches) setCasesOpen(false);
+  openCase(b.dataset.case);
 };
 function openFromText(text, error) {
   const ids = extractCveIds(text).filter(validId);

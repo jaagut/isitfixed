@@ -57,86 +57,120 @@
           <p id="add-error" class="field-error" role="alert"></p>
         </div>
       </div>
-      <div class="search-area">
-        <div class="search">
-          <svg
-            class="search-icon"
-            viewBox="0 0 24 24"
-            width="18"
-            height="18"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            aria-hidden="true"
-          >
-            <circle cx="10.5" cy="10.5" r="6.5" />
-            <path d="m16 16 4.5 4.5" />
-          </svg>
-          <input
-            id="search"
-            type="search"
-            placeholder="Search your cases…"
-            aria-label="Search your cases"
-            autocomplete="off"
-            title="Search your cases (S)"
-          />
-          <button type="button" id="clear-search" aria-label="Clear search" hidden>×</button>
-          <kbd class="search-shortcut" aria-hidden="true">S</kbd>
-        </div>
-        <div class="search-filters" role="group" aria-label="Filter cases">
-          <button type="button" data-search-field="os" aria-expanded="false" aria-controls="search-filter-panel">
-            <span class="filter-label" data-default="OS">OS</span>
-            <svg
-              class="filter-chevron"
-              viewBox="0 0 24 24"
-              width="12"
-              height="12"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="m6 9 6 6 6-6" />
-            </svg>
-          </button>
-          <button type="button" data-search-field="status" aria-expanded="false" aria-controls="search-filter-panel">
-            <span class="filter-label" data-default="Status">Status</span>
-            <svg
-              class="filter-chevron"
-              viewBox="0 0 24 24"
-              width="12"
-              height="12"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="m6 9 6 6 6-6" />
-            </svg>
-          </button>
-        </div>
-        <div
-          id="search-filter-panel"
-          class="search-filter-panel"
-          role="group"
-          aria-labelledby="search-filter-title"
-          hidden
+      <!-- Small screens: the case list folds behind this button (the home page lists cases too). -->
+      <button type="button" id="cases-toggle" class="cases-toggle" aria-expanded="false" aria-controls="sidebar-cases">
+        Your cases <span id="cases-toggle-count" class="count">0</span>
+        <svg
+          class="filter-chevron"
+          viewBox="0 0 24 24"
+          width="14"
+          height="14"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
         >
-          <div class="search-filter-heading">
-            <button type="button" id="back-search-filter" aria-label="Back to operating systems" hidden>←</button>
-            <strong id="search-filter-title">Filter cases</strong>
-            <button type="button" id="close-search-filter" aria-label="Close filter">×</button>
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+      <div id="sidebar-cases" class="sidebar-cases">
+        <div class="search-area">
+          <div class="search">
+            <svg
+              class="search-icon"
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              aria-hidden="true"
+            >
+              <circle cx="10.5" cy="10.5" r="6.5" />
+              <path d="m16 16 4.5 4.5" />
+            </svg>
+            <input
+              id="search"
+              type="search"
+              placeholder="Search your cases…"
+              aria-label="Search your cases"
+              autocomplete="off"
+              title="Search your cases (S)"
+            />
+            <button type="button" id="clear-search" aria-label="Clear search" hidden>×</button>
+            <kbd class="search-shortcut" aria-hidden="true">S</kbd>
           </div>
-          <div id="search-options" class="search-options"></div>
+          <div class="search-filters" role="group" aria-label="Filter cases">
+            <button type="button" data-search-field="os" aria-expanded="false" aria-controls="search-filter-panel">
+              <span class="filter-label" data-default="OS">OS</span>
+              <svg
+                class="filter-chevron"
+                viewBox="0 0 24 24"
+                width="12"
+                height="12"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+            </button>
+            <button type="button" data-search-field="status" aria-expanded="false" aria-controls="search-filter-panel">
+              <span class="filter-label" data-default="Status">Status</span>
+              <svg
+                class="filter-chevron"
+                viewBox="0 0 24 24"
+                width="12"
+                height="12"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+            </button>
+          </div>
+          <div
+            id="search-filter-panel"
+            class="search-filter-panel"
+            role="group"
+            aria-labelledby="search-filter-title"
+            hidden
+          >
+            <div class="search-filter-heading">
+              <button type="button" id="back-search-filter" aria-label="Back to operating systems" hidden>←</button>
+              <strong id="search-filter-title">Filter cases</strong>
+              <button type="button" id="close-search-filter" aria-label="Collapse filter list" title="Collapse">
+                <svg
+                  viewBox="0 0 24 24"
+                  width="16"
+                  height="16"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="m6 15 6-6 6 6" />
+                </svg>
+              </button>
+            </div>
+            <div id="search-options" class="search-options"></div>
+          </div>
         </div>
+        <div class="sidebar-label">YOUR CASES <span id="case-count">0</span></div>
+        <nav id="case-list" aria-label="Saved cases"></nav>
+        <nav id="archived-list" aria-label="Archived cases" hidden></nav>
       </div>
-      <div class="sidebar-label">YOUR CASES <span id="case-count">0</span></div>
-      <nav id="case-list" aria-label="Saved cases"></nav>
-      <nav id="archived-list" aria-label="Archived cases" hidden></nav>
       <div class="sidebar-bottom">
         <div class="sidebar-actions">
           <button type="button" id="settings-button" aria-label="Settings">
@@ -205,7 +239,7 @@
           Deep Security
         </h3>
         <label class="toggle">
-          <input type="checkbox" id="tmds-toggle" />
+          <input type="checkbox" id="tmds-toggle" role="switch" />
           Show TMDS Agent and Kernel Support Package support
         </label>
         <p class="settings-hint" id="tmds-hint">
@@ -239,7 +273,7 @@
       <section class="settings-section" aria-labelledby="settings-updates">
         <h3 id="settings-updates">Updates &amp; notifications</h3>
         <label class="toggle">
-          <input type="checkbox" id="auto-refresh" />
+          <input type="checkbox" id="auto-refresh" role="switch" />
           Check cases every hour while <span class="product-name">Is It Fixed</span> is open
         </label>
         <p class="settings-hint">

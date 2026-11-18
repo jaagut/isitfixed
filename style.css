@@ -901,59 +901,43 @@ span.product-name {
   flex-shrink: 0;
   min-width: 0;
 }
-/* Sidebar: icon, input and the "/" hint share one cell; the hint hides once something is typed. */
+/* The case list wrapper only matters on small screens, where it folds behind .cases-toggle. */
+.sidebar-cases {
+  display: contents;
+}
+.cases-toggle {
+  display: none;
+}
+/* Sidebar: a compact hero form on the hero's green, with a "+" icon inside the input. */
 #sidebar-case-entry .home-open {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
   gap: 6px;
   max-width: none;
-  padding: 6px;
   border: 0;
-  border-radius: 11px;
   background: var(--hero-bg);
   box-shadow: var(--shadow-selected);
-}
-#sidebar-case-entry .case-entry-icon,
-#sidebar-case-entry input,
-#sidebar-case-entry kbd {
-  grid-area: 1 / 1;
 }
 #sidebar-case-entry .case-entry-icon {
   z-index: 1;
   margin-left: 10px;
-  color: var(--hero-muted);
+  color: var(--text-muted);
   pointer-events: none;
 }
 #sidebar-case-entry input {
-  width: 100%;
   padding: 9px 30px 9px 34px;
   font-size: 13px;
 }
 #sidebar-case-entry input:focus {
-  outline: 2px solid var(--hero-focus);
-  outline-offset: 1px;
+  outline-width: 2px;
 }
 #sidebar-case-entry kbd {
-  justify-self: end;
-  margin: 0 8px 0 0;
-  color: var(--text-muted);
-  border-color: var(--border);
-  background: transparent;
-  pointer-events: none;
-}
-#sidebar-case-entry input:not(:placeholder-shown) ~ kbd {
-  visibility: hidden;
+  margin-right: 8px;
 }
 #sidebar-case-entry .primary {
-  grid-area: 1 / 2;
   width: 36px;
   height: 36px;
   padding: 0;
 }
-#sidebar-case-entry .primary span,
-#home-case-entry-slot .case-entry-icon,
-#home-case-entry-slot kbd {
+#sidebar-case-entry .primary span {
   display: none;
 }
 /* Inline form error: one compact line with a warning mark, on both the sidebar and the hero. */
@@ -1049,9 +1033,6 @@ span.product-name {
   color: var(--text-muted);
   margin: 7px 0 0 27px;
   font-size: 11px;
-}
-.case-entry .status-bar {
-  margin-right: 2px;
 }
 .case-update {
   margin-left: auto;
@@ -1295,33 +1276,6 @@ span.product-name {
   border-radius: 1px;
   background: currentColor;
 }
-.status-bar {
-  display: flex;
-  gap: 2px;
-  height: 4px;
-  margin: 8px 0 0 27px;
-  border-radius: 2px;
-  overflow: hidden;
-}
-.status-bar span {
-  min-width: 4px;
-  border-radius: 2px;
-}
-.status-bar .affected {
-  background: var(--affected-solid);
-}
-.status-bar .fix_available {
-  background: var(--fix-solid);
-}
-.status-bar .inconclusive {
-  background: var(--inconclusive-solid);
-}
-.status-bar .unaffected {
-  background: var(--unaffected-solid);
-}
-.status-bar .unknown {
-  background: var(--unknown-solid);
-}
 .cvss {
   font: 700 10px var(--font-sans);
   letter-spacing: 0;
@@ -1348,7 +1302,9 @@ span.product-name {
   background: var(--cvss-low-bg);
 }
 
-/* The whole case card reveals one line of statuses with their OS logos above its status bar. */
+/* Status meter: "N OS versions" and a bar with one segment per status. Hovering or focusing the
+   case card raises each segment's OS logos on a tint of the segment's own colour, directly above
+   its coloured strip; touch devices toggle .expanded instead. */
 .status-meter {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -1357,110 +1313,104 @@ span.product-name {
   margin-top: 7px;
   min-width: 0;
 }
-.status-breakdown {
-  grid-column: 1 / -1;
-}
 .case-item .status-meter {
   margin-left: 27px;
 }
 .status-total {
-  display: block;
   padding-bottom: 1px;
   font-size: 10px;
   line-height: 1;
   white-space: nowrap;
   color: var(--text-muted);
 }
-.status-meter .status-bar,
-.case-entry .status-meter .status-bar,
-.home-case-meta .status-meter .status-bar {
-  height: 4px;
-  margin: 0;
-  transition: height 140ms ease;
+.status-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 0;
 }
-.status-breakdown {
-  display: grid;
-  align-content: start;
-  gap: 6px;
+.status-seg {
+  --seg: var(--unknown-solid);
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 4px;
+}
+.status-seg.affected {
+  --seg: var(--affected-solid);
+}
+.status-seg.fix_available {
+  --seg: var(--fix-solid);
+}
+.status-seg.inconclusive {
+  --seg: var(--inconclusive-solid);
+}
+.status-seg.unaffected {
+  --seg: var(--unaffected-solid);
+}
+.seg-fill {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--seg);
+  transition:
+    height 140ms ease,
+    border-radius 140ms ease;
+}
+/* Collapsed logos keep their width (so segments never jump) but no height. */
+.seg-logos {
+  position: relative;
+  display: flex;
+  gap: 1px;
   max-height: 0;
-  padding-bottom: 0;
+  padding: 0 3px;
+  border-radius: 6px 6px 0 0;
+  background: color-mix(in srgb, var(--seg) 22%, transparent);
   opacity: 0;
   visibility: hidden;
   overflow: hidden;
   transition:
     max-height 140ms ease,
-    padding-bottom 140ms ease,
+    padding 140ms ease,
     opacity 100ms ease,
     visibility 0s 140ms;
 }
-.case-entry:hover .status-breakdown,
-.home-case-entry:hover .status-breakdown,
-.case-entry:has(:focus-visible) .status-breakdown,
-.home-case-entry:has(:focus-visible) .status-breakdown,
-.status-meter.expanded .status-breakdown {
-  max-height: 160px;
-  padding-bottom: 6px;
+.case-entry:hover .seg-logos,
+.home-case-entry:hover .seg-logos,
+.case-entry:has(:focus-visible) .seg-logos,
+.home-case-entry:has(:focus-visible) .seg-logos,
+.status-meter.expanded .seg-logos {
+  max-height: 24px;
+  padding: 3px 3px 2px;
   opacity: 1;
   visibility: visible;
-  /* Clipped while it grows, then visible so disc rings and version tooltips are not cut off. */
+  /* Clipped while it grows, then visible so the version tooltips are not cut off. */
   overflow: visible;
   transition:
     max-height 160ms ease 120ms,
-    padding-bottom 160ms ease 120ms,
+    padding 160ms ease 120ms,
     opacity 120ms ease 120ms,
     visibility 0s 120ms,
     overflow 0s 280ms;
   transition-behavior: allow-discrete;
 }
-.case-entry:hover .status-meter .status-bar,
-.home-case-entry:hover .status-meter .status-bar,
-.case-entry:has(:focus-visible) .status-meter .status-bar,
-.home-case-entry:has(:focus-visible) .status-meter .status-bar,
-.status-meter.expanded .status-bar {
-  height: 6px;
+.case-entry:hover .seg-fill,
+.home-case-entry:hover .seg-fill,
+.case-entry:has(:focus-visible) .seg-fill,
+.home-case-entry:has(:focus-visible) .seg-fill,
+.status-meter.expanded .seg-fill {
+  height: 5px;
+  border-radius: 0 0 2px 2px;
   transition-delay: 120ms;
 }
-.status-meter.expanded .status-breakdown,
-.status-meter.expanded .status-bar {
+.status-meter.expanded .seg-logos,
+.status-meter.expanded .seg-fill {
   transition-delay: 0s;
-}
-.status-groups {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  padding-top: 2px;
-}
-.status-group {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 2px 4px 2px 2px;
-  border-radius: 999px;
-  background: var(--unknown-bg);
-}
-.status-group.affected {
-  background: var(--affected-bg);
-}
-.status-group.fix_available {
-  background: var(--fix-bg);
-}
-.status-group.inconclusive {
-  background: var(--inconclusive-bg);
-}
-.status-group.unaffected {
-  background: var(--unaffected-bg);
-}
-.status-group > .case-status {
-  width: 16px;
-  height: 16px;
-  margin-right: 1px;
-  font-size: 10px;
 }
 .stack-logo {
   position: relative;
   display: inline-grid;
   place-items: center;
+  flex-shrink: 0;
   width: 16px;
   height: 16px;
 }
@@ -1468,8 +1418,8 @@ span.product-name {
   width: 13px;
   height: 13px;
 }
-/* Instant tooltips: the version on a logo, the status name on the rest of the pill. */
-.status-group[data-tip]:hover:not(:has(.stack-logo:hover))::after,
+/* Instant tooltips: the version on a logo, the status name elsewhere on its tint. */
+.seg-logos[data-tip]:hover:not(:has(.stack-logo:hover))::after,
 .stack-logo[data-tip]:hover::after {
   content: attr(data-tip);
   position: absolute;
@@ -1486,10 +1436,34 @@ span.product-name {
   box-shadow: var(--shadow-actions);
   pointer-events: none;
 }
-.status-meter .status-checked {
+.seg-logos[data-tip]:hover:not(:has(.stack-logo:hover))::after {
+  left: 3px;
+  transform: none;
+}
+/* The sidebar's check time appears below the bar while the card is open. */
+.status-checked {
+  grid-column: 2;
+  max-height: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--text-faint);
+  transition: max-height 140ms ease;
+}
+/* Overrides the card subtitle style that .case-item small would apply. */
+.case-item .status-checked {
   margin: 0;
   font-size: 10px;
-  color: var(--text-muted);
+  font-weight: 400;
+  color: var(--text-faint);
+}
+.case-entry:hover .status-checked,
+.case-entry:has(:focus-visible) .status-checked,
+.status-meter.expanded .status-checked {
+  max-height: 16px;
+  margin-top: 3px;
+  transition-delay: 120ms;
 }
 
 /* ------------------------------------------------------------ Case page */
@@ -2509,7 +2483,9 @@ div.fact {
   margin-top: 22px;
 }
 .home-open {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   gap: 8px;
   max-width: 640px;
   background: #ffffff14;
@@ -2517,13 +2493,19 @@ div.fact {
   border-radius: 11px;
   padding: 6px;
 }
+/* The input, its "+" icon (sidebar only) and the "/" shortcut hint share one grid cell. */
+.home-open .case-entry-icon,
+.home-open input,
+.home-open kbd {
+  grid-area: 1 / 1;
+}
 .home-open input {
-  flex: 1;
+  width: 100%;
   min-width: 0;
   background: var(--hero-input-bg);
   border: 0;
   border-radius: 7px;
-  padding: 13px 14px;
+  padding: 13px 46px 13px 14px;
   font-size: 14px;
   color: var(--hero-input-text);
 }
@@ -2531,13 +2513,28 @@ div.fact {
   outline: 3px solid var(--hero-focus);
   outline-offset: 1px;
 }
+.home-open kbd {
+  justify-self: end;
+  margin: 0 12px 0 0;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  background: transparent;
+  pointer-events: none;
+}
+.home-open input:not(:placeholder-shown) ~ kbd {
+  visibility: hidden;
+}
 .home-open .primary {
+  grid-area: 1 / 2;
   background: var(--hero-button-bg);
   color: var(--hero-button-text);
   border-color: var(--hero-button-bg);
 }
 .home-open .primary:hover {
   background: var(--hero-button-hover);
+}
+#home-case-entry-slot .case-entry-icon {
+  display: none;
 }
 .home-hero .field-error {
   max-width: 640px;
@@ -2709,9 +2706,6 @@ button.home-stat[aria-pressed='true'] {
 .home-case-meta {
   font-size: 11px;
   color: var(--text-soft);
-}
-.home-case-meta .status-bar {
-  margin: 6px 0;
 }
 .home-case-meta small {
   font-size: 10px;
@@ -2888,9 +2882,55 @@ dialog input:not([type='checkbox']):not([type='file']) {
 .toggle {
   display: flex;
   align-items: center;
-  gap: 9px;
-  line-height: 1.7;
+  gap: 11px;
+  line-height: 1.5;
   margin: 20px 0;
+  cursor: pointer;
+}
+/* Settings toggles are switches: a sliding knob on a track that fills with the accent when on. */
+.toggle input[type='checkbox'] {
+  appearance: none;
+  position: relative;
+  flex-shrink: 0;
+  width: 34px;
+  height: 20px;
+  margin: 0;
+  border-radius: 999px;
+  background: var(--border-strong);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.toggle input[type='checkbox']::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px #0000004d;
+  transition: transform 0.15s;
+}
+.toggle input[type='checkbox']:checked {
+  background: var(--accent);
+}
+.toggle input[type='checkbox']:checked::before {
+  transform: translateX(14px);
+}
+.toggle input[type='checkbox']:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.toggle input[type='checkbox']:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+@media (prefers-reduced-motion: reduce) {
+  .toggle input[type='checkbox'],
+  .toggle input[type='checkbox']::before {
+    transition: none;
+  }
 }
 
 #disclaimer-dialog {
@@ -3180,93 +3220,120 @@ dialog input:not([type='checkbox']):not([type='file']) {
   }
 }
 @media (max-width: 760px) {
+  /* Small screens: a header (brand, GitHub, settings), the open-case form, then "Your cases"
+     folding out search, filters and a vertical list. */
   .sidebar {
     position: relative;
     width: 100%;
-    padding: 18px 18px 10px;
-    max-height: none;
     min-width: 0;
+    max-height: none;
+    padding: 14px 16px 12px;
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 12px;
+    align-items: center;
+    gap: 12px 8px;
     border-right: 0;
     border-bottom: 1px solid var(--border);
   }
   .sidebar-heading {
-    grid-column: 1 / -1;
-    margin-bottom: 0;
-  }
-  .sidebar-heading .icon-link {
-    width: 44px;
-    height: 44px;
+    grid-column: 1;
+    grid-row: 1;
+    margin: 0;
   }
   .brand {
-    grid-column: 1 / -1;
-    margin-bottom: 0;
+    margin: 0;
+    font-size: 18px;
   }
-  /* Small screens show the connection line only when the server is not answering. */
+  .sidebar-heading .icon-link {
+    width: 40px;
+    height: 40px;
+  }
+  /* The footer's settings button joins the header row; its connection line shows only on problems. */
+  .sidebar-bottom {
+    display: contents;
+  }
+  .sidebar-actions {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .sidebar-bottom button {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    font-size: 18px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--surface);
+  }
+  .settings-label {
+    display: none;
+  }
+  .connection {
+    grid-column: 1 / -1;
+    padding: 0;
+  }
   .connection:not(.offline),
   .sidebar-label,
   #sidebar-resize,
   .sidebar kbd {
     display: none;
   }
-  .search,
-  #sidebar-case-entry .home-open {
-    grid-template-columns: 18px minmax(0, 1fr) 28px;
+  #sidebar-case-entry {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+  .cases-toggle {
+    display: flex;
+    grid-column: 1 / -1;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-control);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+  }
+  .cases-toggle .filter-chevron {
+    margin-left: auto;
+  }
+  .cases-toggle[aria-expanded='true'] .filter-chevron {
+    transform: rotate(180deg);
+  }
+  .sidebar-cases {
+    display: none;
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+  .sidebar.cases-open .sidebar-cases {
+    display: flex;
+    flex-direction: column;
   }
   .sidebar .search-area {
-    grid-column: 1 / -1;
-    grid-row: 3;
-    margin: 0;
-    min-width: 0;
+    margin: 0 0 6px;
   }
-  #case-list,
-  #archived-list {
-    grid-column: 1 / -1;
-    display: flex;
-    gap: 8px;
-    min-width: 0;
-    max-height: 150px;
-    overflow: auto;
-    margin: 0;
+  #case-list {
+    flex: none;
+    max-height: 55vh;
   }
-  .archive-toggle {
-    grid-column: 1 / -1;
-    margin: 0;
-  }
-  .case-entry {
-    width: 210px;
-  }
-  .case-actions {
-    opacity: 1;
-    pointer-events: auto;
-  }
-  #sidebar-case-entry {
-    width: 100%;
-    position: static;
-    grid-column: 1;
-    grid-row: 2;
-  }
-  /* Controls participate in layout, so they cannot cover the brand or case list. */
-  .sidebar-bottom {
-    justify-self: end;
-    position: static;
-    grid-column: 2;
-    grid-row: 2;
-    padding: 0;
-    border: 0;
-  }
-  .sidebar-bottom button {
-    width: 44px;
-    height: 44px;
-    padding: 0;
-    font-size: 18px;
-    border: 1px solid var(--border);
-    background: var(--surface);
-  }
-  .settings-label {
+  /* No keyboard shortcut hints on touch; the home form's button shrinks to its arrow. */
+  .home-open kbd,
+  #home-case-entry-slot .primary span {
     display: none;
+  }
+  .home-open input {
+    padding-right: 14px;
+  }
+  #home-case-entry-slot .primary {
+    align-self: stretch;
+    width: 50px;
+    padding: 0;
+  }
+  #archived-list {
+    max-height: 30vh;
   }
   .workspace {
     margin: 0;
@@ -3371,9 +3438,6 @@ dialog input:not([type='checkbox']):not([type='file']) {
   }
   .home-hero h1 {
     font-size: 26px;
-  }
-  .home-open {
-    flex-direction: column;
   }
   .home-stats {
     grid-template-columns: repeat(2, 1fr);
