@@ -20,6 +20,12 @@ LABEL org.opencontainers.image.title="Is It Fixed" \
       org.opencontainers.image.source="https://github.com/jaagut/isitfixed" \
       org.opencontainers.image.licenses="MIT"
 WORKDIR /app
+# Apply Debian security fixes newer than the pinned base image. pip and its
+# vendored libraries are build tooling; runtime dependencies are installed by uv.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/* \
+    && python -m pip uninstall --yes pip
 # Nothing is written outside /data and /tmp at runtime, so the root filesystem can be mounted read-only.
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
     UV_PROJECT_ENVIRONMENT=/opt/venv UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
