@@ -1,0 +1,295 @@
+<!--
+  Template for the privacy policy (Datenschutzerklärung) of a CVE Desk instance operated from Germany.
+  This is a template, not legal advice. Operators must review it and adapt it to their actual setup before
+  publishing, in particular: reverse proxy and access logs, hosting provider, backups, and any changes to the code.
+  It describes the behavior of the unmodified CVE Desk application only.
+  The German text is authoritative; the English text is a convenience translation.
+  Placeholders ({{…}}) are filled from the LEGAL_* environment variables and server settings, see legal/README.md.
+  Blocks between <!- - if:name - -> and <!- - endif:name - -> are removed when that value is empty.
+-->
+<p class="legal-languages"><a href="#privacy-en" hreflang="en">English version</a></p>
+
+<section lang="de" id="privacy-de">
+  <h2>Datenschutzerklärung</h2>
+  <p>
+    Diese Erklärung informiert Sie nach Art. 13 DSGVO darüber, welche personenbezogenen Daten bei der Nutzung von CVE
+    Desk<!-- if:site_url -->
+    unter {{site_url}}<!-- endif:site_url -->
+    verarbeitet werden. Kurz gesagt: Es gibt kein Benutzerkonto, keine Cookies, kein Tracking und keine Inhalte von
+    Drittanbietern. Ihre Fälle werden in Ihrem Browser gespeichert.
+  </p>
+
+  <h3>Verantwortlicher</h3>
+  <address>
+    {{operator_name}}<br />
+    {{operator_address}}<br />
+    E-Mail: <a href="mailto:{{operator_email}}">{{operator_email}}</a>
+  </address>
+
+  <h3>Bereitstellung der Website und Protokolle</h3>
+  <p>
+    Beim Aufruf überträgt Ihr Browser technisch bedingt Ihre IP-Adresse sowie Angaben wie die angefragte Adresse, Datum
+    und Uhrzeit und die Browserkennung (User-Agent). Die IP-Adresse wird nur kurzfristig im Arbeitsspeicher verarbeitet,
+    um die Verbindung herzustellen und die Antwort auszuliefern. Die Übertragung erfolgt verschlüsselt (HTTPS).
+  </p>
+  <p>
+    Die Anwendung schreibt keine IP-Adressen und keine Workspace-IDs (siehe „Beobachtete Fälle auf dem Server“) in ihre
+    Protokolle. Ihre Betriebsprotokolle enthalten nur technische Angaben wie Zeitpunkt, Art eines Fehlers oder den
+    Status von Datenabrufen. Werden auf dem vorgeschalteten Webserver Zugriffsprotokolle geführt, enthalten diese
+    IP-Adressen nur in gekürzter Form. Alle Protokolle werden nach spätestens {{log_retention_days}} Tagen gelöscht.
+  </p>
+  <p>
+    Zweck ist der sichere und stabile Betrieb, insbesondere die Erkennung und Behebung von Störungen und Missbrauch.
+    Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO; unser berechtigtes Interesse liegt in diesen Zwecken.
+  </p>
+
+  <h3>Schutz vor Überlastung (Ratenbegrenzung)</h3>
+  <p>
+    Um die Anzahl der Anfragen pro Minute zu begrenzen, bildet der Server aus Ihrer IP-Adresse mit einem geheimen,
+    zufälligen Schlüssel einen gekürzten Hashwert (HMAC) und führt dazu einen Anfragezähler. Die IP-Adresse selbst wird
+    dabei nicht gespeichert. Der Schlüssel wird nur im Arbeitsspeicher gehalten und alle 24 Stunden durch einen neuen
+    ersetzt; dabei werden alle Zähler verworfen, und Hashwerte verschiedener Tage lassen sich nicht verknüpfen.
+    Hashwerte, Zähler und Schlüssel werden weder auf einen Datenträger geschrieben noch protokolliert und gehen
+    spätestens beim Schlüsselwechsel oder bei einem Neustart verloren. Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO;
+    unser berechtigtes Interesse ist der Schutz des Dienstes vor Überlastung und Missbrauch.
+  </p>
+
+  <h3>Speicherung in Ihrem Browser (Local Storage)</h3>
+  <p>
+    CVE Desk speichert im lokalen Speicher (Local Storage) Ihres Browsers: Ihre Fälle (CVE-Kennungen, ausgewählte
+    Betriebssysteme, zuletzt abgerufene Herstellerdaten, Archiv- und Gelesen-Status), Ihre Einstellungen, die
+    Bestätigung des Hinweises beim ersten Besuch und eine zufällig erzeugte, anonyme Workspace-ID. Diese Daten bleiben
+    auf Ihrem Gerät; an den Server gelangen nur die unter „Beobachtete Fälle auf dem Server“ genannten Angaben. Cookies
+    werden nicht verwendet.
+  </p>
+  <p>
+    Die Speicherung ist unbedingt erforderlich, damit der von Ihnen ausdrücklich gewünschte Dienst – das Speichern und
+    Verfolgen Ihrer Fälle – funktioniert. Eine Einwilligung ist daher nach § 25 Abs. 2 Nr. 2 TDDDG nicht erforderlich.
+    Rechtsgrundlage für die weitere Verarbeitung ist Art. 6 Abs. 1 lit. f DSGVO. Sie können einzelne Fälle in der
+    Anwendung löschen oder alle Daten über die Browsereinstellungen entfernen. Exportierte Sicherungen sind Dateien auf
+    Ihrem Gerät, die wir nicht erhalten.
+  </p>
+
+  <h3>Beobachtete Fälle auf dem Server</h3>
+  <p>
+    Damit die Herstellerdaten Ihrer gespeicherten Fälle stündlich aktualisiert werden – auch wenn Ihr Browser
+    geschlossen ist –, übermittelt Ihr Browser die CVE-Kennungen und die ausgewählten Herstellerfamilien Ihrer Fälle
+    zusammen mit der anonymen Workspace-ID an den Server. Der Server speichert dazu nur diese Angaben und den Zeitpunkt
+    der letzten Synchronisierung. Die Workspace-ID wird zufällig in Ihrem Browser erzeugt; sie enthält keine Angaben zu
+    Ihrer Person und wird nicht mit IP-Adressen oder anderen Daten verknüpft.
+  </p>
+  <p>
+    Löschen oder archivieren Sie einen Fall, wird er sofort aus Ihrem Workspace entfernt. Ein Workspace, der
+    {{workspace_ttl_days}} Tage lang nicht synchronisiert wurde, wird automatisch gelöscht. Wird eine CVE von keinem
+    Workspace mehr beobachtet, werden die zwischengespeicherten Herstellerdaten nach {{cache_retention_days}} Tagen
+    gelöscht; diese Daten sind öffentliche Informationen der Hersteller ohne Personenbezug. Rechtsgrundlage ist Art. 6
+    Abs. 1 lit. f DSGVO; unser berechtigtes Interesse ist die Bereitstellung aktueller Daten für Ihre Fälle.
+  </p>
+  <p>
+    Die Herstellerdaten ruft der Server selbst von festen, offiziellen Adressen ab. Ihre IP-Adresse oder Workspace-ID
+    wird dabei nicht an die Hersteller übermittelt.
+  </p>
+
+  <h3>Desktop-Benachrichtigungen</h3>
+  <p>
+    Wenn Sie Benachrichtigungen aktivieren, fragt Ihr Browser nach Ihrer Erlaubnis. Die Benachrichtigungen erzeugt die
+    geöffnete Anwendung lokal in Ihrem Browser; es wird kein Push-Dienst verwendet und es werden dafür keine Daten an
+    den Server oder Dritte übermittelt. Die Erlaubnis können Sie jederzeit in den Browsereinstellungen widerrufen.
+  </p>
+
+  <!-- if:hosting_provider -->
+  <h3>Hosting</h3>
+  <p>
+    Der Server wird betrieben bei: {{hosting_provider}}. Der Anbieter verarbeitet die oben beschriebenen Daten, die auf
+    dem Server anfallen, in unserem Auftrag auf Grundlage eines Vertrags zur Auftragsverarbeitung nach Art. 28 DSGVO.
+  </p>
+  <!-- endif:hosting_provider -->
+
+  <h3>Kein Tracking, keine Drittinhalte, externe Links</h3>
+  <p>
+    Wir verwenden keine Cookies, keine Analyse- oder Tracking-Werkzeuge und binden keine Inhalte Dritter ein (keine
+    Schriftarten, Skripte, Bilder oder Karten von fremden Servern). Eine Weitergabe Ihrer Daten an Dritte findet nicht
+    statt<!-- if:hosting_provider -->, abgesehen vom Hosting-Anbieter als Auftragsverarbeiter<!-- endif:hosting_provider -->.
+  </p>
+  <p>
+    Die Anwendung enthält Links zu Websites der Hersteller, Schwachstellendatenbanken und zum Quellcode. Erst wenn Sie
+    einen solchen Link anklicken, ruft Ihr Browser die fremde Seite auf und übermittelt dabei unter anderem Ihre
+    IP-Adresse an deren Betreiber. Für diese Seiten gelten die Datenschutzhinweise des jeweiligen Anbieters.
+  </p>
+
+  <h3>Ihre Rechte</h3>
+  <p>Sie haben nach der DSGVO das Recht auf</p>
+  <ul>
+    <li>Auskunft über die zu Ihnen gespeicherten Daten (Art. 15),</li>
+    <li>Berichtigung (Art. 16) und Löschung (Art. 17),</li>
+    <li>Einschränkung der Verarbeitung (Art. 18),</li>
+    <li>Datenübertragbarkeit (Art. 20) und</li>
+    <li>
+      Widerspruch gegen die Verarbeitung auf Grundlage von Art. 6 Abs. 1 lit. f DSGVO aus Gründen, die sich aus Ihrer
+      besonderen Situation ergeben (Art. 21).
+    </li>
+  </ul>
+  <p>
+    Wir können Sie anhand der gespeicherten Daten nicht identifizieren (Art. 11 DSGVO). Ihre beobachteten Fälle können
+    Sie jederzeit selbst entfernen, indem Sie die Fälle in der Anwendung löschen. Möchten Sie ein Recht in Bezug auf
+    Ihre Workspace-Daten ausüben, nennen Sie uns bitte Ihre Workspace-ID aus dem Speicher Ihres Browsers. Wenden Sie
+    sich dazu an die oben genannte Kontaktadresse.
+  </p>
+  <p>
+    Sie haben außerdem das Recht, sich bei einer Datenschutz-Aufsichtsbehörde zu beschweren (Art. 77 DSGVO),
+    insbesondere in dem Mitgliedstaat Ihres Aufenthaltsorts, Ihres Arbeitsplatzes oder des Orts des mutmaßlichen
+    Verstoßes.
+  </p>
+
+  <h3>Pflicht zur Bereitstellung, automatisierte Entscheidungen</h3>
+  <p>
+    Sie sind weder gesetzlich noch vertraglich verpflichtet, Daten bereitzustellen. Ohne die Übertragung der IP-Adresse
+    kann die Website technisch nicht ausgeliefert werden; ohne Local Storage können keine Fälle gespeichert werden. Eine
+    automatisierte Entscheidungsfindung einschließlich Profiling (Art. 22 DSGVO) findet nicht statt.
+  </p>
+
+  <h3>Stand</h3>
+  <p>
+    Stand: {{last_updated}}. Wir passen diese Erklärung an, wenn sich die Anwendung oder die Rechtslage ändert.
+    <!-- if:source_url -->Der Quellcode, der das hier beschriebene Verhalten umsetzt, ist öffentlich einsehbar:
+    <a href="{{source_url}}">{{source_url}}</a>.<!-- endif:source_url -->
+  </p>
+</section>
+
+<section lang="en" id="privacy-en">
+  <h2>Privacy policy</h2>
+  <p><em>Convenience translation. The German version above is authoritative.</em></p>
+  <p>
+    This policy informs you under Art. 13 GDPR which personal data is processed when you use CVE Desk<!-- if:site_url -->
+    at {{site_url}}<!-- endif:site_url -->. In short: there are no user accounts, no cookies, no tracking and no
+    third-party content. Your cases are stored in your browser.
+  </p>
+
+  <h3>Controller</h3>
+  <address>
+    {{operator_name}}<br />
+    {{operator_address}}<br />
+    E-mail: <a href="mailto:{{operator_email}}">{{operator_email}}</a>
+  </address>
+
+  <h3>Providing the website and logs</h3>
+  <p>
+    When you visit the site, your browser necessarily transmits your IP address and details such as the requested
+    address, date and time, and the browser identifier (user agent). The IP address is processed only briefly in memory
+    to establish the connection and deliver the response. The connection is encrypted (HTTPS).
+  </p>
+  <p>
+    The application does not write IP addresses or workspace IDs (see “Watched cases on the server”) to its logs. Its
+    operational logs only contain technical details such as timestamps, the kind of an error or the status of data
+    retrievals. If access logs are kept on the upstream web server, they contain IP addresses only in shortened form.
+    All logs are deleted after {{log_retention_days}} days at the latest.
+  </p>
+  <p>
+    The purpose is secure and stable operation, in particular detecting and fixing faults and abuse. The legal basis is
+    Art. 6(1)(f) GDPR; our legitimate interest lies in these purposes.
+  </p>
+
+  <h3>Protection against overload (rate limiting)</h3>
+  <p>
+    To limit the number of requests per minute, the server derives a truncated hash (HMAC) from your IP address using a
+    secret random key and keeps a request counter for it. The IP address itself is not stored. The key is held only in
+    memory and replaced every 24 hours; this discards all counters, and hashes from different days cannot be linked.
+    Hashes, counters and keys are never written to disk or logged and are lost at the latest when the key changes or the
+    server restarts. The legal basis is Art. 6(1)(f) GDPR; our legitimate interest is protecting the service from
+    overload and abuse.
+  </p>
+
+  <h3>Storage in your browser (local storage)</h3>
+  <p>
+    CVE Desk stores in your browser's local storage: your cases (CVE IDs, selected operating systems, the most recently
+    retrieved vendor data, archive and read status), your settings, the acknowledgement of the first-visit notice, and a
+    randomly generated anonymous workspace ID. This data stays on your device; only the details listed under “Watched
+    cases on the server” reach the server. No cookies are used.
+  </p>
+  <p>
+    This storage is strictly necessary for the service you explicitly requested — saving and tracking your cases — to
+    work. Consent is therefore not required under § 25(2) no. 2 TDDDG. The legal basis for further processing is Art.
+    6(1)(f) GDPR. You can delete individual cases in the application or remove all data in your browser settings.
+    Exported backups are files on your device that we do not receive.
+  </p>
+
+  <h3>Watched cases on the server</h3>
+  <p>
+    So that the vendor data for your saved cases is refreshed hourly, even while your browser is closed, your browser
+    sends the CVE IDs and selected vendor families of your cases together with the anonymous workspace ID to the server.
+    For this purpose the server stores only these details and the time of the last synchronization. The workspace ID is
+    generated randomly in your browser; it contains no information about you and is not linked to IP addresses or any
+    other data.
+  </p>
+  <p>
+    When you delete or archive a case, it is removed from your workspace immediately. A workspace that has not been
+    synchronized for {{workspace_ttl_days}} days is deleted automatically. Once no workspace watches a CVE any more, the
+    cached vendor data for it is deleted after {{cache_retention_days}} days; this data is public vendor information
+    without any personal reference. The legal basis is Art. 6(1)(f) GDPR; our legitimate interest is providing current
+    data for your cases.
+  </p>
+  <p>
+    The server retrieves vendor data itself from fixed, official addresses. Your IP address or workspace ID is not
+    passed on to the vendors.
+  </p>
+
+  <h3>Desktop notifications</h3>
+  <p>
+    If you enable notifications, your browser asks for your permission. Notifications are created locally in your
+    browser by the open application; no push service is used and no data is sent to the server or third parties for
+    this. You can revoke the permission at any time in your browser settings.
+  </p>
+
+  <!-- if:hosting_provider -->
+  <h3>Hosting</h3>
+  <p>
+    The server is hosted by: {{hosting_provider}}. The provider processes the server-side data described above on our
+    behalf under a data processing agreement pursuant to Art. 28 GDPR.
+  </p>
+  <!-- endif:hosting_provider -->
+
+  <h3>No tracking, no third-party content, external links</h3>
+  <p>
+    We use no cookies and no analytics or tracking tools, and we do not embed third-party content (no fonts, scripts,
+    images or maps from other servers). Your data is not passed on to third parties<!-- if:hosting_provider -->, apart
+    from the hosting provider as processor<!-- endif:hosting_provider -->.
+  </p>
+  <p>
+    The application contains links to vendor websites, vulnerability databases and the source code. Only when you click
+    such a link does your browser open the external page and transmit, among other things, your IP address to its
+    operator. The privacy policy of the respective provider applies to those pages.
+  </p>
+
+  <h3>Your rights</h3>
+  <p>Under the GDPR you have the right to</p>
+  <ul>
+    <li>access the data stored about you (Art. 15),</li>
+    <li>rectification (Art. 16) and erasure (Art. 17),</li>
+    <li>restriction of processing (Art. 18),</li>
+    <li>data portability (Art. 20), and</li>
+    <li>object to processing based on Art. 6(1)(f) GDPR on grounds relating to your particular situation (Art. 21).</li>
+  </ul>
+  <p>
+    We cannot identify you from the stored data (Art. 11 GDPR). You can remove your watched cases yourself at any time
+    by deleting them in the application. If you want to exercise a right regarding your workspace data, please give us
+    your workspace ID from your browser's storage. Use the contact address above.
+  </p>
+  <p>
+    You also have the right to lodge a complaint with a data protection supervisory authority (Art. 77 GDPR), in
+    particular in the Member State of your habitual residence, place of work or place of the alleged infringement.
+  </p>
+
+  <h3>Obligation to provide data, automated decisions</h3>
+  <p>
+    You are not legally or contractually obliged to provide any data. Without transmitting the IP address, the website
+    cannot be delivered; without local storage, no cases can be saved. There is no automated decision-making, including
+    profiling (Art. 22 GDPR).
+  </p>
+
+  <h3>Last updated</h3>
+  <p>
+    Last updated: {{last_updated}}. We update this policy when the application or the legal situation changes.
+    <!-- if:source_url -->The source code implementing the behavior described here is publicly available:
+    <a href="{{source_url}}">{{source_url}}</a>.<!-- endif:source_url -->
+  </p>
+</section>

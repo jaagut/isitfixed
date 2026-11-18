@@ -1,100 +1,194 @@
 # CVE Desk
 
-A compact CVE case workspace: a static frontend with browser-local cases, backed by a small FastAPI vendor-data cache.
+CVE Desk is a small, self-hostable workspace for tracking individual CVEs across Linux distributions and Windows. Open a
+case for a CVE, pick the OS versions you run, and see per-version vendor status, published fixes and advisories in one
+place. The server keeps the vendor data current; your cases stay in your browser.
 
-## Run
+<!-- Screenshot: add docs/screenshot.png here once a public instance exists. -->
 
-Use Docker with the Compose plugin:
+> **Disclaimer.** CVE Desk is an informational tool. Data comes from public vendor sources and may be incomplete,
+> delayed or wrong. No warranty — use at your own discretion and verify with the vendor before acting. Not affiliated
+> with or endorsed by Red Hat, SUSE, Canonical, Debian, Alpine, Microsoft or Trend Micro.
+
+## Features
+
+- **One case per CVE.** CVE record, CVSS scores, vendor status per OS version, fixed packages, advisories and
+  mitigations, with links to the vendor pages.
+- **Vendor evidence** from Red Hat (CSAF/VEX), SUSE (CSAF/VEX), Ubuntu, Debian and Alpine, plus Microsoft fixed builds
+  from the CVE record. Missing evidence is shown as **No data**, never as "not affected".
+- **Stays current.** The server refreshes every watched CVE hourly, also while your browser is closed. Changed cases are
+  marked **New** and move to the top; optional desktop notifications.
+- **Trend Micro Deep Security (TMDS) Agent matching.** For kernel fixes, shows whether the current LTS 20 agent or a
+  Kernel Support Package lists the fixed kernel. Can be switched off per user or per server.
+- **Private by design.** No account, no cookies, no analytics, no third-party resources. Cases live in your browser's
+  local storage; export and restore JSON backups.
+- **Case links** (`/CVE-2024-3094`), archive, search, light and dark theme.
+
+## Quick start
+
+Requirements: Docker with the Compose plugin.
 
 ```sh
+git clone https://github.com/jaagut/cve-viewer.git
+cd cve-viewer
 docker compose up --build -d
 ```
 
-Open http://localhost:8080. Compose binds to localhost, restarts the app automatically, and checks `/api/health`. FastAPI serves the frontend and API from the same origin. One worker runs the hourly refresh jobs and SQLite cache.
+Open <http://localhost:8080>. The app and API are served from one container. Data (SQLite cache, watch registrations,
+agent inventory, logs) is stored in `./data`, mounted at `/data`, and survives rebuilds. Your cases and settings stay in
+your browser.
 
 ```sh
-docker compose logs -f app
-docker compose down
+docker compose logs -f app   # follow logs
+docker compose up --build -d # update after git pull
+docker compose down          # stop (keeps ./data)
 ```
 
-The existing `data/` directory is mounted at `/data`, preserving cached evidence, agent inventories and watch registrations across rebuilds and container replacement. Stopping Compose does not delete it. Browser cases and settings remain in browser storage. No host Python environment or Node installation is needed to run the app.
+A prebuilt image is published as `ghcr.io/jaagut/cve-viewer` (tags `latest`, `X.Y.Z`, `main`, `sha-<commit>`). For
+public hosting behind a reverse proxy (HTTPS, trusted proxy IPs, imprint and privacy pages, admin dashboard), read
+[docs/deployment.md](docs/deployment.md) and [docs/operations.md](docs/operations.md). HTTPS is required for desktop
+notifications outside `localhost`.
 
-To update after pulling changes, run `docker compose up --build -d` again. HTTPS is recommended outside localhost and required for desktop notifications. Put a reverse proxy in front if remote access is needed.
+## Configuration
 
-### Separate static hosting
+All settings are environment variables. The most important ones are listed here; the full reference with all defaults
+is in [docs/deployment.md](docs/deployment.md).
 
-The frontend can still be hosted separately. Set `API_BASE` in `src/config.js` to the backend URL, for example `https://cve-api.example.com/api`. Set `CORS_ORIGINS=https://cve.example.com` on the backend (comma-separated exact origins), and optionally `SERVE_FRONTEND=false`. A reverse proxy routing `/api` to FastAPI also works without changing `API_BASE`.
+| Variable                                    | Default               | Purpose                                                                   |
+| ------------------------------------------- | --------------------- | ------------------------------------------------------------------------- |
+| `CACHE_DB`                                  | `/data/cache.sqlite3` | SQLite database for the vendor cache and watch registrations              |
+| `SITE_URL` / `SOURCE_URL`                   | – / this repository   | Public URL of this instance / link to the source code shown in the footer |
+| `MANUAL_REFRESH`                            | `false`               | Show the **Refresh data** button and allow forced upstream refreshes      |
+| `TMDS_ENABLED`                              | `true`                | Run the Trend Micro agent and Kernel Support Package inventory jobs       |
+| `MAX_WATCHED_CVES` / `MAX_CACHED_CVES`      | `1000` / `1000`       | Global caps for watched and cached CVEs                                   |
+| `MAX_WATCHES_PER_WORKSPACE`                 | `200`                 | Cases one browser workspace may watch                                     |
+| `WORKSPACE_TTL_DAYS`                        | `30`                  | Drop watch registrations of workspaces not seen for this many days        |
+| `RATE_LIMIT_REQUESTS`                       | `240`                 | Requests per minute per client (`0` disables a limit)                     |
+| `RATE_LIMIT_LOOKUPS` / `RATE_LIMIT_WATCHES` | `20` / `12`           | CVE lookups / watch syncs per minute per client                           |
+| `RATE_LIMIT_LOOKUPS_GLOBAL`                 | `120`                 | CVE lookups per minute across all clients                                 |
+| `FORWARDED_ALLOW_IPS`                       | `127.0.0.1`           | Reverse proxy IPs trusted for `X-Forwarded-For`                           |
+| `LOG_DIR` / `LOG_LEVEL`                     | – / `INFO`            | Application log directory (the image uses `/data/logs`) and level         |
+| `LOG_RETENTION_DAYS`                        | `14`                  | Log retention (maximum 14)                                                |
+| `ADMIN_PORT` / `ADMIN_TOKEN`                | `8081` / –            | Private admin dashboard port (empty or `0` disables) and optional token   |
+| `CORS_ORIGINS` / `CSP_CONNECT_SRC`          | –                     | Only needed when the frontend and API are hosted on different origins     |
+| `LEGAL_OPERATOR_*`, `LEGAL_*`, `LEGAL_DIR`  | –                     | Imprint and privacy pages, see [legal/README.md](legal/README.md)         |
 
-Only explicit frontend directories/files are served; backend source, SQLite files, and repository contents are not exposed by a root static mount. The API fetches fixed official source URLs, not caller-supplied URLs. It has no user authentication; restrict access at your reverse proxy if this is a private deployment. It accepts up to 1,000 watched CVEs globally and keeps up to 1,000 cached CVEs. When the cache is full, the least recently refreshed unwatched CVE is removed early; watched CVEs are never evicted. Lookups that return no CVE record and no vendor evidence are not stored, so unknown IDs cannot fill the cache. The frontend uses system fonts and loads no third-party assets.
+Advanced options (`SERVE_FRONTEND`, `FRONTEND_DIR`, `API_DOCS`, `HSTS`, `USER_AGENT`, `WATCHDOG_TIMEOUT`, `HOST`,
+`PORT`) are described in the deployment docs.
 
-## Watching, refreshing and retention
+## How it works
 
-Saved browser cases register as watches under an anonymous workspace ID stored in localStorage. Only CVE IDs and selected vendor families are sent to the backend. Complete case state and read/unread indicators stay in the browser.
+CVE Desk uses a pull model. Nothing is pushed to your browser.
 
-- Newly opened CVEs are fetched on demand. Fresh results are served from SQLite.
-- The backend refreshes watched CVEs hourly, including while the browser is closed. It checks for due work and expired data every minute, and catches up after a restart.
-- **Refresh data** asks the backend to refresh upstream sources. Repeated manual requests share a 60-second cooldown; concurrent requests for the same CVE share one refresh.
-- Browser checks run hourly while open and on returning to the tab. Source changes mark a case **New** and move it to the sidebar's top. Opening it clears the marker. Optional desktop notifications require permission.
-- Deleting a case removes this workspace's watch. Restore replaces this workspace's watch set with the restored cases.
-- **The ten-day retention clock starts when the last workspace stops watching a CVE.** Watched CVEs have no expiry. If another workspace still watches the same CVE, its cache remains active.
-- Unwatched data is no longer refreshed in the background. Reads and refreshes do not extend its retention deadline. Rewatching before expiry cancels that deadline. After ten days unwatched, cache data is removed on the next cleanup pass (at most about a minute later); expired data is never served.
-- Watch registrations persist until explicitly removed by the workspace. Clearing browser storage alone does not unregister server watches. Delete cases before clearing storage; the watch endpoint below can also clear a known workspace's registrations. Workspace IDs should be kept private because they authorize replacing that watch set.
+1. **Your browser** stores cases, selections, settings and an anonymous random workspace ID in local storage. When you
+   open a case, it asks the server for that CVE and the selected vendor families.
+2. **The server** fetches the CVE record and vendor documents on demand, normalizes them and caches the result in
+   SQLite. Saved cases are registered as _watches_ (CVE ID + vendor families) under the anonymous workspace ID.
+3. **Every hour** the server refreshes all watched CVEs from the vendor sources, including while no browser is open.
+4. **While open**, the browser checks its cases hourly and when you return to the tab; changes are marked **New**.
 
-The retention policy applies to backend cache data. Browser snapshots and exported backups persist until the user removes them. Operator-managed database backups and access logs require their own retention configuration. The SQLite connection uses secure deletion and a non-WAL journal to avoid keeping old cache contents in a persistent WAL file.
+Retention, in short:
 
-Bulk Debian/Alpine documents are shared in server memory for at most an hour; only normalized per-CVE results are persisted. Source failures preserve prior evidence and its original timestamps, with explicit warnings. If a CVE record and all vendor evidence are unavailable, the API returns an error rather than a safe assessment: 404 when the CVE Program has no such ID, 502 when sources failed.
+- Watched CVEs are kept and refreshed as long as at least one workspace watches them.
+- When the last workspace stops watching a CVE, its cached data is deleted **10 days** later. Reading it does not extend
+  that deadline; watching it again cancels it.
+- Deleting or archiving a case removes it from your workspace's watches. Workspaces not seen for **30 days** are dropped
+  automatically (the open app re-syncs every few minutes).
+- Your browser data stays until you delete it. Export a backup before clearing browser storage.
 
-A vendor answering 404 for a per-CVE document (Red Hat, SUSE, Ubuntu) is reported as `notPublished` on that source, not as an outage; affected products stay **No data**. Each source has a time limit (30 seconds for per-CVE documents, 150 seconds for bulk feeds), so one slow vendor cannot hold up a response indefinitely. Selecting an additional vendor family fetches only that family and does not reset the hourly refresh clock.
+Details on evidence semantics, source failures and the API: [docs/evidence.md](docs/evidence.md) and
+[docs/api.md](docs/api.md).
 
-## API
+## Privacy
 
-- `GET /api/health`
-- `GET /api/cves/CVE-2026-98432?families=rhel,sles&refresh=false`
-- `PUT /api/workspaces/<workspace-uuid>/watches` with `{"cases":[{"id":"CVE-2026-98432","families":["rhel","sles"]}]}`
+- No cookies, tracking, analytics or third-party resources; fonts are system fonts and all assets are served locally.
+- Browser local storage only, for things the app needs to work: cases, settings, the disclaimer acknowledgement and the
+  anonymous workspace ID.
+- The server stores only CVE IDs and selected vendor families per anonymous workspace ID, plus cached public vendor
+  data. No names, accounts or e-mail addresses.
+- Workspaces expire after 30 days of inactivity; unwatched cache data after 10 days; logs after at most 14 days.
+- IP addresses are never stored or logged by the application. Rate limiting uses an HMAC of the client IP with an
+  in-memory key that rotates daily and is never written to disk.
+- Outbound requests go only to fixed official vendor URLs, never to URLs supplied by users.
 
-The watch request replaces that workspace's complete set. Send `{"cases":[]}` to stop all its watches. Accepted vendor families are `rhel`, `sles`, `debian`, `ubuntu`, and `alpine`. An empty family selection still retrieves the CVE record. Windows currently uses CVE CNA statements or manually imported CSAF; its independent feed adapter is not implemented.
+Operators publish their own imprint and privacy policy; German templates with English translations are in
+[legal/](legal/README.md).
 
-Case responses contain the CVE record, normalized `vendorData.evidence`, per-source URLs/fetch timestamps/errors, and cache/watch metadata. The GET endpoint alone does not register a watch. API responses use `Cache-Control: no-store` so browser HTTP caching does not hide server updates.
+## Sources and licenses
 
-## Evidence
+| Source                                                                      | Used for                                     | License / terms                                          |
+| --------------------------------------------------------------------------- | -------------------------------------------- | -------------------------------------------------------- |
+| [CVE Program](https://www.cve.org/) (cveawg.mitre.org)                      | CVE record, CNA statements, Microsoft builds | [CVE terms of use](https://www.cve.org/Legal/TermsOfUse) |
+| [Red Hat CSAF/VEX](https://security.access.redhat.com/data/csaf/v2/vex/)    | RHEL status, fixes, advisories               | CC BY 4.0                                                |
+| [SUSE CSAF/VEX](https://ftp.suse.com/pub/projects/security/csaf-vex/)       | SLES status, fixes, advisories               | CC BY 4.0                                                |
+| [Ubuntu CVE tracker](https://ubuntu.com/security/cves)                      | Ubuntu status and fixes                      | Canonical's terms                                        |
+| [Debian security tracker](https://security-tracker.debian.org/tracker)      | Debian status and fixes                      | Debian's terms                                           |
+| [Alpine secdb](https://secdb.alpinelinux.org/)                              | Alpine fixed versions                        | Alpine's terms                                           |
+| Trend Micro [download center feed][tm-feed] and [supported kernels][tm-ksp] | TMDS agent and Kernel Support Package lists  | Trend Micro's terms                                      |
 
-OS selection groups Red Hat, Debian, SUSE, Microsoft, Ubuntu and Alpine with logos and explicit versions. Missing evidence is **No data**, never “not affected.” Distribution status is not inferred from upstream package status. Unaffected version ranges are not inferred to be fixed releases. **Fix available** highlights a published fix without claiming it is installed or that every component/service pack is fixed.
+[tm-feed]: https://s3.amazonaws.com/help-deepsecurity-trendmicro/Resources/CustomScripts/download-center/data/ds-dlc-feed-src/en-us/products_lts.json
+[tm-ksp]: https://files.trendmicro.com/documentation/guides/deep_security/Kernel%20Support/20.0/Deep_Security_20_0_kernels_EN.html
 
-- Red Hat and SUSE: CSAF 2.0/VEX, including product-tree relationships and product/group-scoped remediations. SUSE `recommended` builds count as fixed only when covered by a vendor-fix remediation. Service-pack context stays in the evidence. SUSE advisory references are shown at document scope rather than assigned to every package. SUSE public-cloud container-host images ("CHOST Images for …") are separate products; they are left out of the SLES OS rows and their count is shown with the source.
-- Ubuntu: tracker JSON. Pending uploads remain affected, rather than published fixes.
-- Debian: tracker JSON. A resolved entry with fixed version `0` means unaffected. Debian 11 (Bullseye) is not offered: its LTS ended in August 2026 and the tracker no longer lists it. Saved selections drop it automatically.
-- Alpine: secdb fix records. Absence in this fix-only feed does not establish unaffected status.
+CVE Desk normalizes and caches these documents; it does not redistribute them in bulk. Vendor names and logos are
+trademarks of their owners and are used only to identify the vendor's data (see [docs/trademarks.md](docs/trademarks.md),
+[logo attribution](assets/logos/README.md) and [fixture attribution](tests/fixtures/README.md)).
 
-Source links open in new tabs. The EUVD link opens its search homepage. Legacy notes and imported evidence in old backups are preserved, but their editing controls have been removed.
+## TMDS Agent and Kernel Support Package matching
 
-The old static `vendor-data/` cache, watchlist, feed-sync script and committing workflow have been retired. Vendor cache data no longer needs to be pushed or redeployed. Reduced public source excerpts under `tests/fixtures/` are test data only.
+Deep Security Agent on Linux needs kernel-specific modules. CVE Desk tracks two official Trend Micro sources hourly:
 
-## Checks
+- **Bundled agent kernels:** the latest LTS 20 agent package per supported OS and architecture is downloaded from the
+  download center, its published SHA-256 checksum is verified, and the list of bundled `Plugin-VFS_Filter_<kernel>`
+  descriptors is recorded. Archives are inspected in memory, never executed or extracted, and not kept.
+- **Kernel Support Packages (KSP):** the supported-kernels page for Deep Security 20 is parsed per platform,
+  architecture and kernel flavor, including partial support (Δ).
 
-Development tooling uses [uv](https://docs.astral.sh/uv/) for Python and [pnpm](https://pnpm.io/) for the JavaScript linters; both only resolve dependency releases that are at least two days old.
+For each vendor kernel fix, a case shows whether a listed kernel of the same branch with an equal or newer build exists.
+Limits: this compares names in Trend Micro's published lists; it is not a runtime certification and says nothing about
+an installed agent. Distribution package versions and kernel release names use different schemes, so missing matches
+stay **unverified**, not unsupported. The KSP "since" release is only known for kernels that appeared after this server
+started watching. Details: [docs/tmds.md](docs/tmds.md).
+
+## Development
+
+Tooling: [uv](https://docs.astral.sh/uv/) for Python, [pnpm](https://pnpm.io/) for JavaScript tooling, Node.js for
+tests and the build. Both package managers only resolve releases that are at least two days old.
 
 ```sh
 uv sync                              # Python runtime and dev dependencies (.venv)
-pnpm install                         # prettier and eslint
+pnpm install                         # prettier, eslint, esbuild
+uv run pre-commit install            # run all checks on every commit
+git config blame.ignoreRevsFile .git-blame-ignore-revs
+
 uv run pytest                        # backend tests
 pnpm test                            # frontend tests (node --test)
-uv run ruff check && uv run ruff format --check
-pnpm lint && pnpm format:check
-uv run pre-commit install            # optional: run all checks on commit
+pnpm run build                       # minified frontend bundle in dist/
+uv run pre-commit run --all-files    # ruff, prettier, eslint and file checks
 ```
 
-To skip the bulk reformatting commit in `git blame`, run `git config blame.ignoreRevsFile .git-blame-ignore-revs`.
+To run without Docker, start the server with `uv run python -m backend` (data goes to `data/`) and open
+<http://localhost:8080>; the admin dashboard listens on <http://localhost:8081>. See [CONTRIBUTING.md](CONTRIBUTING.md)
+for conventions and how to add a vendor source.
 
-Backend tests cover explicit/shared watches, ten-day expiry, rewatching, restart persistence, closed-browser refresh, concurrent lookups, cooldown, failed sources, validation, private-file routing and vendor parsing. JavaScript tests cover assessment, source semantics, sidebar updates and the browser/API contract. `pnpm check` checks frontend syntax.
+### Project layout
 
-Sources: [CVE Program](https://www.cve.org/), [Red Hat VEX](https://security.access.redhat.com/data/csaf/v2/vex/), [SUSE CSAF/VEX](https://ftp.suse.com/pub/projects/security/csaf-vex/), [Ubuntu tracker](https://ubuntu.com/security/cves), [Debian tracker](https://security-tracker.debian.org/tracker), [Alpine secdb](https://secdb.alpinelinux.org/). Red Hat and SUSE source data are licensed under CC BY 4.0; the cache normalizes those documents. See [logo attribution](assets/logos/README.md) and [fixture attribution](tests/fixtures/README.md). No analytics.
+```text
+backend/          FastAPI app, vendor providers, SQLite cache, TMDS inventory, backend tests
+src/              Frontend ES modules (no framework)
+index.html        App shell; style.css holds all styles (design tokens, dark mode)
+assets/           Icon and vendor logos
+legal/            Imprint/privacy page shell and German/English templates
+tests/            Frontend tests (node --test) and reduced vendor fixtures
+scripts/          Frontend build (esbuild)
+docs/             Deployment, operations, evidence semantics, API, TMDS, trademarks
+.github/          CI, image publishing, Dependabot, issue and PR templates
+```
 
-## Case layout and progressive loading
+## Project
 
-Settings controls default versions, OS ordering and the appearance (follow the system, light or dark). Version pickers are collapsed independently of their selections; removing the last selection does not collapse a picker. Cases group results in collapsible OS sections. New vendor selections fetch data automatically. Refresh streams completed CVE/vendor areas over `/api/cves/<id>/stream` as newline-delimited JSON, while the existing snapshot endpoint remains available. Source errors preserve saved evidence. Missing evidence is **No data**; evidence without a conclusive assessment is **Inconclusive**.
+- [CONTRIBUTING.md](CONTRIBUTING.md) — setup, conventions, pull requests
+- [SECURITY.md](SECURITY.md) — report vulnerabilities privately
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+- [docs/](docs/) — deployment, operations, evidence, API, TMDS, trademarks
 
-## Trend Micro LTS 20 inventory
-
-A separate worker checks the official download-center JSON hourly. It downloads the latest enabled LTS 20 agent ZIP for each supported OS/architecture stream, validates the published SHA-256, and records bundled `Plugin-VFS_Filter_<kernel>` descriptors. Archives are inspected in memory and never executed or extracted onto disk; downloads are limited to 300 MiB. No agent binaries are persisted. SQLite stores release metadata, checksums, source URLs and kernel descriptor names. Superseded inventory expires ten days after it was last current; current releases stay retained. Failed checks preserve unexpired inventory and expose an error through `/api/tmds`.
-
-The initial inventory may take several minutes to populate. Existing releases are not downloaded again. Initial discovery starts with the current release per stream; it does not backfill all historical binaries. Kernel fixes show exact matching bundled descriptor entries and their OS/architecture-specific agent version. Missing matches remain unverified: distro source-package versions may differ from kernel ABI names, and separately delivered kernel support packages are outside this bundled inventory. Descriptor presence is package evidence, not a runtime certification or a statement about an installed agent.
+Released under the [MIT License](LICENSE).

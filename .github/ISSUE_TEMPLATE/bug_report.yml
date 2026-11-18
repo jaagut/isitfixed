@@ -1,0 +1,48 @@
+name: Bug report
+description: Something does not work as expected, or a case shows data that does not match the vendor source.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please do not include security vulnerabilities here; see SECURITY.md.
+        Do not share your workspace ID or exported backups publicly.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the CVE ID and the OS versions selected, if relevant.
+      placeholder: |
+        1. Open CVE-2024-3094
+        2. Select RHEL 9
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Vendor source link
+      description: For data problems, the vendor page or document that shows the correct status.
+  - type: input
+    id: version
+    attributes:
+      label: Version or image tag
+      description: For example `1.1.0`, `main`, `sha-abc1234`, or the commit you run. Shown in /api/config.
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and OS
+      placeholder: Firefox 140 on Ubuntu 24.04
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Remove any private details before posting.
+      render: text
