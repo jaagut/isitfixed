@@ -37,21 +37,24 @@ export function statusDescription(c) {
       .join(', ') || 'No OS versions selected'
   );
 }
-// Vendor logos for the OS versions in one status: one logo per OS family, stacked, with a
-// count when several versions of that family share the status. Versions are in the tooltip
-// and the accessible label.
-function logoStack(products) {
-  const families = new Map();
-  for (const p of products) families.set(p.family, [...(families.get(p.family) || []), p]);
-  const items = [...families].map(([family, versions]) => {
-    const count = versions.length > 1 ? `<span class="stack-count">${versions.length}</span>` : '';
-    return `<span class="stack-logo" title="${esc(versions.map(shortName).join(', '))}">${logo(family)}${count}</span>`;
-  });
-  return `<span class="logo-stack" role="img" aria-label="${esc(products.map(shortName).join(', '))}">${items.join('')}</span>`;
+// One status of the breakdown: a pill tinted in the status colour with the status symbol and
+// one logo per OS version (versions as tooltips). The status name is the pill's label.
+function statusGroup(status, products) {
+  const versions = products.map(shortName);
+  const discs = products.map(
+    (p, i) => `<span class="stack-logo" data-tip="${esc(versions[i])}">${logo(p.family)}</span>`,
+  );
+  const label = esc(`${labels[status]}: ${versions.join(', ')}`);
+  return [
+    `<span class="status-group ${status}" role="img" aria-label="${label}" data-tip="${esc(labels[status])}">`,
+    `<span class="case-status ${status}" aria-hidden="true">${statusSymbols[status]}</span>`,
+    discs.join(''),
+    '</span>',
+  ].join('');
 }
-// Thin bar with one segment per OS version, in status order; the card reveals each status with
-// its OS logos on hover. Segment widths are applied from data-flex after rendering (no inline
-// styles under the CSP).
+// Thin bar with one segment per OS version, in status order; hovering the card reveals one line
+// above it with each status and its OS logos in the same order. Segment widths are applied from
+// data-flex after rendering (no inline styles under the CSP).
 export function statusBar(c, { showChecked = false } = {}) {
   const products = selected(c);
   if (!products.length) return '';
@@ -59,20 +62,17 @@ export function statusBar(c, { showChecked = false } = {}) {
   for (const product of products) groups[rowStatus(c, product)].push(product);
   const populated = STATUS_ORDER.filter((status) => groups[status].length);
   const segments = populated.map((s) => `<span class="${s}" data-flex="${groups[s].length}"></span>`).join('');
-  const breakdown = populated
-    .map((s) => `<span class="status-group">${badge(s)}${logoStack(groups[s])}</span>`)
-    .join('');
+  const breakdown = populated.map((s) => statusGroup(s, groups[s])).join('');
   const checked = showChecked
     ? `<small class="status-checked" data-checked-at="${Number(c.apiChecked || c.checked) || 0}"></small>`
     : '';
   const total = `${products.length} OS ${products.length === 1 ? 'version' : 'versions'}`;
   return [
     '<span class="status-meter">',
-    `<span class="status-total">${total}</span>`,
-    '<span class="status-track">',
     `<span class="status-breakdown"><span class="status-groups">${breakdown}</span>${checked}</span>`,
+    `<span class="status-total">${total}</span>`,
     `<span class="status-bar" aria-hidden="true">${segments}</span>`,
-    '</span></span>',
+    '</span>',
   ].join('');
 }
 export function cvssChip(s) {

@@ -45,7 +45,8 @@ function homeCaseRow(c, ctx) {
     `<small>${esc(c.record ? s.title : c.savedTitle || 'Awaiting lookup')}</small>`,
     '</span>',
     '<span class="home-case-meta">',
-    `<span>${esc(statusDescription(c))}</span>`,
+    // The status breakdown shows the same counts visually; screen readers get them as text.
+    `<span class="visually-hidden">${esc(statusDescription(c))}</span>`,
     statusBar(c),
     `<small>Checked ${ago(c.apiChecked || c.checked, ctx.now)}</small>`,
     '</span>',

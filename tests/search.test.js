@@ -55,15 +55,15 @@ test('the OS picker replaces both OS qualifiers while keeping terms, exclusions 
   assert.equal(selectedSearchFilter(query, 'os', 'debian'), false);
 });
 
-test('status bar shows each status with one stacked logo per OS family, in segment order', () => {
+test('status bar shows one pill per status with a logo per OS version, in segment order', () => {
   const two = { ...c, products: ['rhel9', 'rhel10', 'ubuntu2404', 'debian13'], apiChecked: 1234 };
   const bar = statusBar(two, { showChecked: true });
-  assert.equal((bar.match(/class="status-group"/g) || []).length, 2);
-  // RHEL 9 and 10 share one logo with a count; versions stay in the tooltip and label.
-  assert.equal((bar.match(/class="stack-logo"/g) || []).length, 3);
-  assert.match(bar, /title="RHEL 9, RHEL 10"><img[^>]*logo-rhel[^>]*><span class="stack-count">2<\/span>/);
-  assert.match(bar, /Fix available<\/span><span class="logo-stack" role="img" aria-label="Ubuntu 24.04"/);
-  assert.match(bar, /No data<\/span><span class="logo-stack" role="img" aria-label="RHEL 9, RHEL 10, Debian 13"/);
+  assert.equal((bar.match(/class="status-group /g) || []).length, 2);
+  // One logo per version, each with its own version tooltip; no counts.
+  assert.equal((bar.match(/class="stack-logo"/g) || []).length, 4);
+  assert.match(bar, /data-tip="RHEL 9"><img[^>]*logo-rhel[^>]*><\/span><span class="stack-logo" data-tip="RHEL 10">/);
+  assert.match(bar, /class="status-group fix_available" role="img" aria-label="Fix available: Ubuntu 24.04"/);
+  assert.match(bar, /aria-label="No data: RHEL 9, RHEL 10, Debian 13" data-tip="No data"/);
   assert.ok(bar.indexOf('Fix available') < bar.indexOf('No data'));
   assert.match(
     bar,

@@ -1348,7 +1348,7 @@ span.product-name {
   background: var(--cvss-low-bg);
 }
 
-/* The whole case card reveals compact OS labels above its status bar. */
+/* The whole case card reveals one line of statuses with their OS logos above its status bar. */
 .status-meter {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -1356,6 +1356,9 @@ span.product-name {
   column-gap: 8px;
   margin-top: 7px;
   min-width: 0;
+}
+.status-breakdown {
+  grid-column: 1 / -1;
 }
 .case-item .status-meter {
   margin-left: 27px;
@@ -1367,10 +1370,6 @@ span.product-name {
   line-height: 1;
   white-space: nowrap;
   color: var(--text-muted);
-}
-.status-track {
-  display: block;
-  min-width: 0;
 }
 .status-meter .status-bar,
 .case-entry .status-meter .status-bar,
@@ -1399,16 +1398,19 @@ span.product-name {
 .case-entry:has(:focus-visible) .status-breakdown,
 .home-case-entry:has(:focus-visible) .status-breakdown,
 .status-meter.expanded .status-breakdown {
-  max-height: 125px;
+  max-height: 160px;
   padding-bottom: 6px;
   opacity: 1;
   visibility: visible;
-  overflow: auto;
+  /* Clipped while it grows, then visible so disc rings and version tooltips are not cut off. */
+  overflow: visible;
   transition:
     max-height 160ms ease 120ms,
     padding-bottom 160ms ease 120ms,
     opacity 120ms ease 120ms,
-    visibility 0s 120ms;
+    visibility 0s 120ms,
+    overflow 0s 280ms;
+  transition-behavior: allow-discrete;
 }
 .case-entry:hover .status-meter .status-bar,
 .home-case-entry:hover .status-meter .status-bar,
@@ -1425,58 +1427,64 @@ span.product-name {
 .status-groups {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 12px;
+  gap: 5px;
+  padding-top: 2px;
 }
 .status-group {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
+  padding: 2px 4px 2px 2px;
+  border-radius: 999px;
+  background: var(--unknown-bg);
 }
-.status-group > .status {
-  padding: 2px 5px;
+.status-group.affected {
+  background: var(--affected-bg);
+}
+.status-group.fix_available {
+  background: var(--fix-bg);
+}
+.status-group.inconclusive {
+  background: var(--inconclusive-bg);
+}
+.status-group.unaffected {
+  background: var(--unaffected-bg);
+}
+.status-group > .case-status {
+  width: 16px;
+  height: 16px;
+  margin-right: 1px;
   font-size: 10px;
-  white-space: nowrap;
-}
-/* Overlapping logo discs; each OS family once, with a count when several versions share it. */
-.logo-stack {
-  display: inline-flex;
-  align-items: center;
-  padding-left: 3px;
 }
 .stack-logo {
   position: relative;
   display: inline-grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
-  margin-left: -3px;
-  border-radius: 50%;
-  background: var(--surface);
-  box-shadow:
-    0 0 0 2px var(--surface-alt),
-    0 0 0 3px var(--border);
-}
-/* Room for the count, so it never reads as part of the next disc. */
-.stack-logo:has(.stack-count) {
-  margin-right: 6px;
+  width: 16px;
+  height: 16px;
 }
 .stack-logo .vendor-logo {
   width: 13px;
   height: 13px;
 }
-.stack-count {
+/* Instant tooltips: the version on a logo, the status name on the rest of the pill. */
+.status-group[data-tip]:hover:not(:has(.stack-logo:hover))::after,
+.stack-logo[data-tip]:hover::after {
+  content: attr(data-tip);
   position: absolute;
-  z-index: 1; /* above the next disc */
-  right: -5px;
-  bottom: -4px;
-  min-width: 12px;
-  height: 12px;
-  padding: 0 2px;
-  border-radius: 6px;
-  font: 700 8px/12px var(--font-sans);
-  text-align: center;
-  color: var(--surface);
-  background: var(--text-soft);
+  z-index: 2;
+  bottom: calc(100% + 5px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 7px;
+  border-radius: 5px;
+  font: 600 10px/1.4 var(--font-sans);
+  white-space: nowrap;
+  color: var(--toast-text);
+  background: var(--toast-bg);
+  box-shadow: var(--shadow-actions);
+  pointer-events: none;
 }
 .status-meter .status-checked {
   margin: 0;
