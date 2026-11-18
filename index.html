@@ -29,22 +29,61 @@
       <button type="button" id="new-case" class="primary full">＋ Open a case <kbd>/</kbd></button>
       <div class="search-area">
         <div class="search">
-          <span aria-hidden="true">⌕</span>
+          <svg
+            class="search-icon"
+            viewBox="0 0 24 24"
+            width="18"
+            height="18"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            aria-hidden="true"
+          >
+            <circle cx="10.5" cy="10.5" r="6.5" />
+            <path d="m16 16 4.5 4.5" />
+          </svg>
           <input
             id="search"
             type="search"
             placeholder="Search your cases…"
             aria-label="Search your cases"
-            role="combobox"
-            aria-autocomplete="list"
-            aria-expanded="false"
-            aria-controls="search-options"
             autocomplete="off"
-            title="Search your cases (Ctrl+K or ⌘K)"
+            title="Search your cases (S, Ctrl+K or ⌘K)"
           />
-          <button type="button" id="clear-search" aria-label="Clear search" hidden>×</button>
+          <button type="button" id="clear-search" aria-label="Clear search" hidden>×</button
+          ><kbd class="search-shortcut" aria-hidden="true">S</kbd>
         </div>
-        <div id="search-options" class="search-options" role="listbox" aria-label="Search filters" hidden></div>
+        <div class="search-filters" aria-label="Filter cases">
+          <button type="button" data-search-field="os" aria-expanded="false" aria-controls="search-filter-panel">
+            OS <span aria-hidden="true">⌄</span>
+          </button>
+          <button type="button" data-search-field="version" aria-expanded="false" aria-controls="search-filter-panel">
+            Version <span aria-hidden="true">⌄</span>
+          </button>
+          <button type="button" data-search-field="status" aria-expanded="false" aria-controls="search-filter-panel">
+            Status <span aria-hidden="true">⌄</span>
+          </button>
+        </div>
+        <div
+          id="search-filter-panel"
+          class="search-filter-panel"
+          role="dialog"
+          aria-labelledby="search-filter-title"
+          hidden
+        >
+          <div class="search-filter-heading">
+            <strong id="search-filter-title">Filter cases</strong
+            ><button type="button" id="close-search-filter" aria-label="Close filter">×</button>
+          </div>
+          <input
+            id="filter-options-input"
+            type="search"
+            autocomplete="off"
+            aria-label="Find filter options"
+            placeholder="Find an option…"
+          />
+          <div id="search-options" class="search-options" role="listbox" aria-label="Filter options"></div>
+        </div>
       </div>
       <div class="sidebar-label">YOUR CASES <span id="case-count">0</span></div>
       <nav id="case-list" aria-label="Saved cases"></nav>
@@ -101,7 +140,6 @@
           <h2 id="add-title">Open a case</h2>
           <button type="button" data-close="add-dialog" aria-label="Close">×</button>
         </div>
-        <p>One vulnerability. Just the products you care about. Shortcut: /. Search your cases: Ctrl+K or ⌘K.</p>
         <label>
           CVE ID or link
           <input
@@ -185,6 +223,32 @@
           <button type="button" id="notifications">Enable desktop notifications</button>
           <span id="notification-status" class="muted" role="status"></span>
         </div>
+      </section>
+      <section class="settings-section" aria-labelledby="settings-shortcuts">
+        <h3 id="settings-shortcuts">Keyboard shortcuts</h3>
+        <dl class="keyboard-shortcuts">
+          <div>
+            <dt>Open a case</dt>
+            <dd><kbd>/</kbd></dd>
+          </div>
+          <div>
+            <dt>Search your cases</dt>
+            <dd><kbd>S</kbd> or <kbd>Ctrl</kbd> + <kbd>K</kbd> / <kbd>⌘</kbd> + <kbd>K</kbd></dd>
+          </div>
+          <div>
+            <dt>Navigate filter options</dt>
+            <dd><kbd>↑</kbd> <kbd>↓</kbd></dd>
+          </div>
+          <div>
+            <dt>Select a filter</dt>
+            <dd><kbd>Enter</kbd></dd>
+          </div>
+          <div>
+            <dt>Close a filter or dialog</dt>
+            <dd><kbd>Esc</kbd></dd>
+          </div>
+        </dl>
+        <p class="settings-hint">Shortcuts are read-only. Single-key shortcuts are inactive while typing in a field.</p>
       </section>
       <section class="settings-section" aria-labelledby="settings-backup">
         <h3 id="settings-backup">Backup</h3>

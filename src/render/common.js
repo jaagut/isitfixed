@@ -50,10 +50,10 @@ export function statusBar(c) {
   const breakdown = rows
     .map(
       ({ product, status }) =>
-        `<span class="status-breakdown-row">${logo(product.family)}<span>${esc(shortName(product))}</span><span class="status ${status}">${labels[status]}</span></span>`,
+        `<span class="status-chip ${status}">${logo(product.family)}<span>${esc(shortName(product))}</span><span class="visually-hidden"> — ${labels[status]}</span></span>`,
     )
     .join('');
-  return `<span class="status-meter"><span class="status-total" aria-label="${rows.length} selected OS versions">${rows.length}</span><span class="status-bar" aria-hidden="true">${segments}</span><span class="status-breakdown">${breakdown}</span></span>`;
+  return `<span class="status-meter"><span class="status-total" aria-label="${rows.length} selected OS version${rows.length === 1 ? '' : 's'}">${rows.length} ${rows.length === 1 ? 'OS' : 'OSs'}</span><span class="status-track"><span class="status-breakdown">${breakdown}</span><span class="status-bar" aria-hidden="true">${segments}</span></span></span>`;
 }
 export function cvssChip(s) {
   if (s.score == null) return '';

@@ -655,31 +655,46 @@ $('#disclaimer-accept').onclick = () => {
 
 // Global controls
 $('#new-case').onclick = openAdd;
-function showSearchOptions() {
-  const input = $('#search'),
-    options = $('#search-options');
-  const prefix = input.value.trim() ? input.value.trimEnd() + ' ' : '';
-  const groups = [
-    ['os', 'Operating systems…'],
-    ['version', 'OS versions…'],
-    ['status', 'Status…'],
-  ];
-  const launchers = groups.map(([field, label]) => ({ label, group: 'Filter by', value: prefix + field + ':' }));
-  const qualified = /(?:^|\s)(os|version|status):[^\s]*$/i.test(input.value);
-  const suggestions = [...(qualified ? [] : launchers), ...searchSuggestions(input.value)];
-  options.innerHTML =
+let searchField = null;
+const filterLabels = { os: 'Operating system', version: 'OS version', status: 'Status' };
+function renderSearchOptions() {
+  if (!searchField) return;
+  const needle = $('#filter-options-input').value;
+  const suggestions = searchSuggestions(searchField + ':' + needle);
+  $('#search-options').innerHTML =
     suggestions
-      .map(
-        (s) =>
-          `<button type="button" role="option" aria-selected="false" data-query="${esc(s.value)}"><span>${esc(s.label)}</span><small>${esc(s.group)}</small></button>`,
-      )
-      .join('') || '<p>No matching filters. Search text is matched against your cases.</p>';
-  options.hidden = false;
-  input.setAttribute('aria-expanded', 'true');
+      .map((s) => {
+        const token = s.value.trim();
+        const chosen = $('#search').value.split(/\s+/).includes(token);
+        return `<button type="button" role="option" aria-selected="${chosen}" data-search-token="${esc(token)}"><span class="filter-check" aria-hidden="true">${chosen ? '✓' : ''}</span><span>${esc(s.label)}</span></button>`;
+      })
+      .join('') || '<p>No matching options.</p>';
+}
+function openSearchFilter(field) {
+  searchField = field;
+  $('#search-filter-title').textContent = 'Filter by ' + filterLabels[field].toLowerCase();
+  $('#filter-options-input').value = '';
+  $('#search-filter-panel').hidden = false;
+  for (const button of document.querySelectorAll('[data-search-field]'))
+    button.setAttribute('aria-expanded', String(button.dataset.searchField === field));
+  renderSearchOptions();
+  $('#filter-options-input').focus();
+}
+function showSearchOptions() {
+  // Typed qualifiers expose the same focused dropdown as the filter buttons.
+  const field = $('#search').value.match(/(?:^|\s)(os|version|status):([^\s]*)$/i);
+  if (!field) return;
+  searchField = field[1].toLowerCase();
+  $('#search-filter-title').textContent = 'Filter by ' + filterLabels[searchField].toLowerCase();
+  $('#filter-options-input').value = field[2];
+  $('#search-filter-panel').hidden = false;
+  for (const button of document.querySelectorAll('[data-search-field]'))
+    button.setAttribute('aria-expanded', String(button.dataset.searchField === searchField));
+  renderSearchOptions();
 }
 function hideSearchOptions() {
-  $('#search-options').hidden = true;
-  $('#search').setAttribute('aria-expanded', 'false');
+  $('#search-filter-panel').hidden = true;
+  for (const button of document.querySelectorAll('[data-search-field]')) button.setAttribute('aria-expanded', 'false');
 }
 function updateSearch() {
   $('#clear-search').hidden = !$('#search').value;
@@ -689,8 +704,6 @@ $('#search').oninput = () => {
   updateSearch();
   showSearchOptions();
 };
-$('#search').onfocus = showSearchOptions;
-$('#search').onclick = showSearchOptions;
 $('#search').onkeydown = (e) => {
   if (e.key === 'Escape') {
     e.preventDefault();
@@ -698,40 +711,63 @@ $('#search').onkeydown = (e) => {
   }
   if (e.key === 'ArrowDown') {
     e.preventDefault();
-    showSearchOptions();
+    openSearchFilter(searchField || 'os');
+  }
+};
+for (const button of document.querySelectorAll('[data-search-field]'))
+  button.onclick = () => {
+    if (!$('#search-filter-panel').hidden && searchField === button.dataset.searchField) hideSearchOptions();
+    else openSearchFilter(button.dataset.searchField);
+  };
+$('#filter-options-input').oninput = renderSearchOptions;
+$('#filter-options-input').onkeydown = (e) => {
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
     $('#search-options button')?.focus();
   }
 };
 $('#search-options').onclick = (e) => {
-  const button = e.target.closest('[data-query]');
+  const button = e.target.closest('[data-search-token]');
   if (!button) return;
-  $('#search').value = button.dataset.query;
+  const token = button.dataset.searchToken;
+  const old = $('#search').value.match(/(?:[^\s"]+|"[^"]*(?:"|$))+/g) || [];
+  const selected = old.includes(token);
+  const rest = old.filter((word) => !word.toLowerCase().startsWith(searchField + ':'));
+  if (!selected) rest.push(token);
+  $('#search').value = rest.join(' ');
   updateSearch();
+  hideSearchOptions();
   $('#search').focus();
-  showSearchOptions();
 };
-$('#search-options').onkeydown = (e) => {
+$('#search-filter-panel').onkeydown = (e) => {
   const buttons = [...$('#search-options').querySelectorAll('button')],
     i = buttons.indexOf(document.activeElement);
-  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+  if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && i >= 0) {
     e.preventDefault();
     buttons[(i + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus();
   } else if (e.key === 'Escape') {
     e.preventDefault();
-    $('#search').focus();
     hideSearchOptions();
+    document.querySelector(`[data-search-field="${searchField}"]`)?.focus();
   }
 };
+$('#close-search-filter').onclick = () => {
+  hideSearchOptions();
+  document.querySelector(`[data-search-field="${searchField}"]`)?.focus();
+};
+document.addEventListener('pointerdown', (e) => {
+  if (!$('.search-area').contains(e.target)) hideSearchOptions();
+});
 $('.search-area').addEventListener('focusout', () =>
-  queueMicrotask(() => {
+  setTimeout(() => {
     if (!$('.search-area').contains(document.activeElement)) hideSearchOptions();
-  }),
+  }, 0),
 );
 $('#clear-search').onclick = () => {
   $('#search').value = '';
   updateSearch();
+  hideSearchOptions();
   $('#search').focus();
-  showSearchOptions();
 };
 $('#case-list').onclick = $('#archived-list').onclick = (e) => {
   if (caseAction(e)) return;
@@ -785,8 +821,8 @@ document.addEventListener('keydown', (e) => {
     typing =
       ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName) ||
       document.activeElement.isContentEditable;
-  if (document.querySelector('dialog[open]') || e.altKey) return;
-  if (mod && key === 'k') {
+  if (document.querySelector('dialog[open]') || e.altKey || e.isComposing) return;
+  if ((mod && key === 'k') || (key === 's' && !mod && !typing)) {
     e.preventDefault();
     $('#search').focus();
     $('#search').select();

@@ -35,10 +35,18 @@ test('suggestions span all categories and replace only the active token', () => 
   assert.equal(searchSuggestions('STATUS:fix')[0].value, 'status:fixed ');
 });
 
-test('status bar lists selected products and their individual verdict without nested controls', () => {
+test('status bar keeps the OS total beside compact colored labels above the bar', () => {
   const bar = statusBar(c);
-  assert.equal((bar.match(/class="status-breakdown-row"/g) || []).length, 3);
-  assert.match(bar, /Ubuntu 24.04<\/span><span class="status fix_available">Fix available/);
+  assert.equal((bar.match(/class="status-chip /g) || []).length, 3);
+  assert.match(
+    bar,
+    /class="status-chip fix_available">.*Ubuntu 24.04<\/span><span class="visually-hidden"> — Fix available/,
+  );
+  assert.match(bar, /3 OSs<\/span><span class="status-track"><span class="status-breakdown">/);
+  assert.ok(bar.indexOf('class="status-breakdown"') < bar.indexOf('class="status-bar"'));
+  assert.match(statusBar({ ...c, products: ['rhel9'] }), /1 selected OS version"[^>]*>1 OS<\/span>/);
+  assert.equal(statusBar({ ...c, products: [] }), '');
+  assert.doesNotMatch(bar, /status-breakdown-row/);
   assert.match(bar, /3 selected OS versions/);
   assert.doesNotMatch(bar, /title=|tabindex=|<button|<details/);
 });

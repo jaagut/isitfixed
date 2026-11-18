@@ -11,7 +11,6 @@ import {
   statusDescription,
   statusBar,
   cvssChip,
-  caseActions,
 } from './common.js';
 
 const EXAMPLES = ['CVE-2024-3094', 'CVE-2024-6387', 'CVE-2024-1086', 'CVE-2024-21338'];
@@ -50,7 +49,6 @@ function homeCaseRow(c, ctx) {
     `<small>Checked ${ago(c.apiChecked || c.checked, ctx.now)}</small>`,
     '</span>',
     '</button>',
-    caseActions(c),
     '</div>',
   ].join('');
 }
