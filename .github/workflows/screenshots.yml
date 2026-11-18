@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
-      contents: write
+      contents: read
       pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -39,39 +39,29 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium
       - run: node scripts/screenshots.mjs
       - name: Preserve screenshots (including fork PRs)
+        id: screenshots
         uses: actions/upload-artifact@v4
         with:
           name: mocked-screenshots
           path: screenshots/*.png
           if-no-files-found: error
           retention-days: 14
-      - name: Publish screenshot gallery comment
-        # Forks still capture screenshots, but cannot publish with a read-only token.
+      - name: Comment with screenshot artifact
+        # Fork tokens cannot write PR comments; their artifact is on the run page.
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/github-script@v8
+        env:
+          ARTIFACT_URL: ${{ steps.screenshots.outputs.artifact-url }}
         with:
           script: |
-            const fs = require('node:fs/promises');
             const {owner, repo} = context.repo;
             const number = context.issue.number;
-            const branch = `screenshots/pr-${number}`;
-            const files = (await fs.readdir('screenshots')).filter(f => /^(desktop|mobile)-(light|dark)-(home|small|complex)\.png$/.test(f)).sort();
-            if (files.length !== 12) throw new Error('Expected all 12 screenshots');
-            const tree = [];
-            for (const file of files) {
-              const content = await fs.readFile(`screenshots/${file}`);
-              const blob = await github.rest.git.createBlob({owner, repo, content: content.toString('base64'), encoding: 'base64'});
-              tree.push({path: file, mode: '100644', type: 'blob', sha: blob.data.sha});
-            }
-            const createdTree = await github.rest.git.createTree({owner, repo, tree});
-            let previous;
-            try { previous = (await github.rest.git.getRef({owner, repo, ref: `heads/${branch}`})).data.object.sha; }
-            catch (error) { if (error.status !== 404) throw error; }
-            const commit = await github.rest.git.createCommit({owner, repo, message: `Screenshots for PR #${number} at ${context.payload.pull_request.head.sha}`, tree: createdTree.data.sha, parents: previous ? [previous] : []});
-            if (previous) await github.rest.git.updateRef({owner, repo, ref: `heads/${branch}`, sha: commit.data.sha});
-            else await github.rest.git.createRef({owner, repo, ref: `refs/heads/${branch}`, sha: commit.data.sha});
             const marker = '<!-- mocked-screenshots -->';
-            const body = [marker, `## Mocked UI screenshots`, `Commit: ${context.payload.pull_request.head.sha}`, 'Synthetic data; desktop/mobile × light/dark × home/simple case/complex case.', ...files.map(file => `<details><summary>${file.replace('.png', '')}</summary>\n\n[Open image](https://github.com/${owner}/${repo}/blob/${commit.data.sha}/${file})\n\n![${file}](https://github.com/${owner}/${repo}/blob/${commit.data.sha}/${file}?raw=true)\n\n</details>`)].join('\n\n');
+            const body = [marker, '## Mocked UI screenshots',
+              `Commit: ${context.payload.pull_request.head.sha}`,
+              '12 PNGs: desktop/mobile × light/dark × home/simple case/complex case.',
+              `[Download screenshots](${process.env.ARTIFACT_URL}) (retained for 14 days; GitHub sign-in required).`,
+            ].join('\n\n');
             const comments = await github.paginate(github.rest.issues.listComments, {owner, repo, issue_number: number});
             const existing = comments.find(c => c.user.type === 'Bot' && c.body.includes(marker));
             if (existing) await github.rest.issues.updateComment({owner, repo, comment_id: existing.id, body});

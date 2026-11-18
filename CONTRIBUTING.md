@@ -100,10 +100,10 @@ case with two sidebar entries, or a complex case with 18 entries and all OS rows
 The browser uses synthetic IndexedDB cases, a fixed clock, and intercepted API
 requests; it never contacts vendor services.
 
-The PR screenshots workflow retains the PNGs as an artifact for 14 days. For
-same-repository PRs it also commits the gallery to `screenshots/pr-<number>` and
-updates one bot comment with expandable images. Fork PRs receive the artifact
-without publishing a comment, because their token has no write permission.
+The PR screenshots workflow retains the PNGs only as an Actions artifact for 14
+days. Same-repository PRs receive an updated bot comment linking to the download;
+fork PRs can download it from the workflow run page. Screenshots are never
+committed or pushed to a branch. Artifact downloads require GitHub sign-in.
 
 Trivy vulnerability checks run independently of GitHub code scanning. SARIF
 reports are retained as workflow artifacts for 14 days. To also upload them to
