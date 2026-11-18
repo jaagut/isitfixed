@@ -22,6 +22,7 @@ export async function responseError(response) {
     message += ` Try again in ${retry < 90 ? `${Math.ceil(retry)} s` : `${Math.ceil(retry / 60)} min`}.`;
   const error = Error(message);
   error.status = response.status;
+  if (retry > 0) error.retryAfter = retry;
   return error;
 }
 async function request(path, options = {}, timeout = 180000) {
@@ -79,6 +80,7 @@ export async function fetchCase(id, products, force = false) {
 let workspace;
 function workspaceId() {
   if (workspace) return workspace;
+  // Preserve the existing anonymous watch identity across the product rename.
   workspace = localStorage.getItem('cve-desk-workspace');
   if (!workspace) {
     if (crypto.randomUUID) workspace = crypto.randomUUID();

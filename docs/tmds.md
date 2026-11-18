@@ -1,7 +1,7 @@
 # Trend Micro Deep Security Agent matching
 
 Deep Security Agent (TMDS) on Linux loads kernel-specific modules. After a kernel fix, the question is whether the agent
-supports the fixed kernel yet. CVE Desk answers this from two public Trend Micro sources, both checked hourly.
+supports the fixed kernel yet. Is It Fixed answers this from two public Trend Micro sources, both checked hourly.
 
 TMDS support can be hidden per user in **Settings** (no TMDS elements are shown and `/api/tmds` is not fetched) and
 disabled per server with `TMDS_ENABLED=false` (no inventory jobs run).
@@ -55,5 +55,5 @@ whether support is listed, still pending (only older kernels of that branch are 
 - Trend Micro can change the feed or page format at any time; on failure the last good data is kept and an error is
   shown.
 
-Deep Security and Trend Micro are trademarks of Trend Micro Incorporated. CVE Desk is not affiliated with or endorsed by
+Deep Security and Trend Micro are trademarks of Trend Micro Incorporated. Is It Fixed is not affiliated with or endorsed by
 Trend Micro; see [trademarks.md](trademarks.md).

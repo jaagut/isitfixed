@@ -17,10 +17,12 @@ def _version():
 
 
 VERSION = _version()
-DEFAULT_SOURCE_URL = "https://github.com/jaagut/cve-viewer"
+DEFAULT_SOURCE_URL = "https://github.com/jaagut/isitfixed"
 # Fallback "last updated" date of the bundled legal templates.
 LEGAL_TEMPLATES_UPDATED = "2026-11-18"
 MAX_LOG_RETENTION_DAYS = 14
+# The watchdog heartbeat runs every WATCHDOG_INTERVAL seconds; WATCHDOG_TIMEOUT must cover several missed beats.
+WATCHDOG_INTERVAL = 5
 
 _TRUE = {"1", "true", "yes", "on"}
 _FALSE = {"0", "false", "no", "off"}
@@ -46,12 +48,15 @@ class Settings:
     api_docs: bool = False
     # Capacity and retention
     max_watched_cves: int = 1000
-    max_cached_cves: int = 1000
+    # Must exceed max_watched_cves, so lookups of unwatched CVEs always find a cache slot.
+    max_cached_cves: int = 1500
     max_watches_per_workspace: int = 200
+    max_workspaces: int = 5000
+    max_watch_rows: int = 50000
     workspace_ttl_days: int = 30
-    # Rate limits (requests per minute; 0 disables a budget)
-    rate_limit_requests: int = 240
-    rate_limit_lookups: int = 20
+    # Rate limits per shortened client address (IPv4 /24, IPv6 /48) and minute; 0 disables a budget
+    rate_limit_requests: int = 300
+    rate_limit_lookups: int = 30
     rate_limit_lookups_global: int = 120
     rate_limit_watches: int = 12
     forwarded_allow_ips: str = "127.0.0.1"
@@ -84,9 +89,19 @@ class Settings:
 
     def __post_init__(self):
         if not self.user_agent:
-            object.__setattr__(self, "user_agent", f"CVE-Desk/{self.version} (+{self.source_url})")
+            object.__setattr__(self, "user_agent", f"isitfixed/{self.version} (+{self.source_url})")
         object.__setattr__(self, "log_retention_days", max(1, min(self.log_retention_days, MAX_LOG_RETENTION_DAYS)))
         object.__setattr__(self, "frontend_dir", Path(self.frontend_dir))
+        if self.max_cached_cves <= self.max_watched_cves:
+            raise SettingsError(
+                f"MAX_CACHED_CVES ({self.max_cached_cves}) must be greater than MAX_WATCHED_CVES"
+                f" ({self.max_watched_cves}), so lookups of unwatched CVEs always find room"
+            )
+        if 0 < self.watchdog_timeout < 3 * WATCHDOG_INTERVAL:
+            raise SettingsError(
+                f"WATCHDOG_TIMEOUT must be 0 (off) or at least {3 * WATCHDOG_INTERVAL} seconds"
+                f" (three heartbeat intervals of {WATCHDOG_INTERVAL} s)"
+            )
 
     @classmethod
     def from_env(cls, env=None, **overrides):
@@ -131,7 +146,14 @@ class Settings:
         number("PORT", 1)
         for name in ("MANUAL_REFRESH", "TMDS_ENABLED", "API_DOCS", "HSTS", "LEGAL_ACCESS_LOGS"):
             flag(name)
-        for name in ("MAX_WATCHED_CVES", "MAX_CACHED_CVES", "MAX_WATCHES_PER_WORKSPACE", "WORKSPACE_TTL_DAYS"):
+        for name in (
+            "MAX_WATCHED_CVES",
+            "MAX_CACHED_CVES",
+            "MAX_WATCHES_PER_WORKSPACE",
+            "MAX_WORKSPACES",
+            "MAX_WATCH_ROWS",
+            "WORKSPACE_TTL_DAYS",
+        ):
             number(name, 1)
         for name in ("REQUESTS", "LOOKUPS", "LOOKUPS_GLOBAL", "WATCHES"):
             number(f"RATE_LIMIT_{name}")

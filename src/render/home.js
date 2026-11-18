@@ -55,15 +55,18 @@ function homeCaseRow(c, ctx) {
   ].join('');
 }
 
+// What Is It Fixed is, shown to every visitor.
+export const tagline = (tmdsOn) =>
+  `Check whether a vulnerability is fixed for the OS versions you run — vendor status, fixed packages${tmdsOn ? ' and Trend Micro Deep Security kernel support' : ' and mitigations'}, in one place.`;
+
 function homeHero(open, attention, ctx) {
   const n = attention.length;
   let title = 'Check a vulnerability',
-    lede =
-      'Paste a CVE ID or any advisory link. CVE Desk checks the vendor trackers for the OS versions you care about.';
+    lede = 'Paste a CVE ID or any advisory link to open a case.';
   if (open.length) {
     title = n ? `${plural(n, 'case')} need${n > 1 ? '' : 's'} a look` : 'All clear for now';
     const tracking = `Tracking ${plural(open.length, 'CVE')} across ${plural(ctx.state.products.length, 'default OS version')}.`;
-    lede = `${tracking} ${ctx.state.auto ? 'Cases are re-checked every hour while CVE Desk is open.' : 'Cases are checked when you open them.'}`;
+    lede = `${tracking} ${ctx.state.auto ? 'Cases are re-checked every hour while Is It Fixed is open.' : 'Cases are checked when you open them.'}`;
   }
   const examples = EXAMPLES.map(
     (id) => `<button type="button" class="example" data-example="${id}">${id}</button>`,
@@ -71,6 +74,7 @@ function homeHero(open, attention, ctx) {
   return [
     '<section class="home-hero"><div>',
     `<h1>${title}</h1>`,
+    `<p class="home-tagline">${esc(tagline(ctx.tmdsOn))}</p>`,
     `<p class="home-lede">${lede}</p>`,
     '<form id="home-form" class="home-open">',
     '<input id="home-input" placeholder="CVE-2024-3094 or a link that contains it" autocomplete="off" spellcheck="false" aria-label="CVE ID or link">',

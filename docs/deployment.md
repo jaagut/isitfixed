@@ -1,6 +1,6 @@
 # Deployment
 
-CVE Desk ships as one container image (`ghcr.io/jaagut/cve-viewer`, or built locally with `docker compose build`). One
+Is It Fixed ships as one container image (`ghcr.io/jaagut/isitfixed`, or built locally with `docker compose build`). One
 process serves the public app on port 8080 and a private admin dashboard on port 8081; both share one event loop, the
 hourly scheduler and the SQLite cache, so run exactly one replica per data volume.
 
@@ -20,7 +20,7 @@ docker compose up --build -d
 The app is at http://localhost:8080 and the admin dashboard at http://localhost:8081; both ports bind to `127.0.0.1`
 only. Compose runs the container with a read-only root filesystem, all capabilities dropped, `no-new-privileges`, a
 1.5 GiB memory limit, a PID limit, rotated `json-file` logs (2 × 5 MB) and a health check. Data lives in the named
-volume `cve-desk-data` (`/data` in the container): the SQLite cache and, by default, the application log files.
+volume `isitfixed-data` (`/data` in the container): the SQLite cache and, by default, the application log files.
 `/tmp` is a disk-backed anonymous volume used to spool Trend Micro agent archives (up to ~350 MB while one is being
 inspected).
 
@@ -55,8 +55,8 @@ stop the process with a configuration error.
 | `API_DOCS`            | `false`                                             | Serve `/docs`, `/redoc` and `/openapi.json`. Swagger UI loads its bundle from jsDelivr, so the CSP is relaxed for those two pages only.                                                    |
 | `FORWARDED_ALLOW_IPS` | `127.0.0.1`                                         | Comma-separated proxy addresses whose `X-Forwarded-For`/`X-Forwarded-Proto` headers are trusted (uvicorn proxy headers). See [client addresses](#client-addresses-behind-a-proxy).         |
 | `SITE_URL`            | unset                                               | Public URL of this instance (used in the legal pages).                                                                                                                                     |
-| `SOURCE_URL`          | `https://github.com/jaagut/cve-viewer`              | Source code link in the footer, `/api/config` and the User-Agent. Point it at your fork if you modify the code.                                                                            |
-| `USER_AGENT`          | `CVE-Desk/<version> (+<SOURCE_URL>)`                | User-Agent for upstream requests.                                                                                                                                                          |
+| `SOURCE_URL`          | `https://github.com/jaagut/isitfixed`               | Source code link in the footer, `/api/config` and the User-Agent. Point it at your fork if you modify the code.                                                                            |
+| `USER_AGENT`          | `isitfixed/<version> (+<SOURCE_URL>)`               | User-Agent for upstream requests.                                                                                                                                                          |
 
 ### Features
 
@@ -84,7 +84,7 @@ A value of `0` disables a rate limit. Rejected requests get HTTP 429 with `Retry
 
 | Variable             | Default                     | Meaning                                                                                                              |
 | -------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `LOG_DIR`            | unset (image: `/data/logs`) | Write `cve-desk.log`, rotated at midnight UTC. Unset or empty: no log files.                                         |
+| `LOG_DIR`            | unset (image: `/data/logs`) | Write `isitfixed.log`, rotated at midnight UTC. Unset or empty: no log files.                                        |
 | `LOG_LEVEL`          | `INFO`                      | Level for the log file (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`). Standard output only ever gets `WARNING`+. |
 | `LOG_RETENTION_DAYS` | `14`                        | Days of log files kept (current file plus rotated ones), capped at 14. Older files are also deleted at startup.      |
 
@@ -165,20 +165,20 @@ revalidated (`no-cache`); API responses use `no-store`.
 
 ## Hardening responsibilities
 
-| Layer         | Responsibility                                                                                                                                                                                                                                                                                                 |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| App           | Input validation, fixed upstream URLs, per-download size caps and deadlines, per-source backoff, rate limits, watch/cache caps, workspace expiry, security headers, sanitized errors, minimal logs, private admin port with optional token, watchdog restart.                                                  |
-| Container     | Non-root user, read-only root filesystem, `cap_drop: ALL`, `no-new-privileges`, memory/CPU/PID limits, log rotation, health check, restart policy (see `compose.yaml`).                                                                                                                                        |
-| Reverse proxy | TLS and HSTS, request body limit, unbuffered stream route, access-log minimisation (masked addresses, ≤ 14 days or off), no route to the admin port, optional extra request limits.                                                                                                                            |
-| Host          | Firewall allowing only 80/443 (and SSH/VPN); SSH with keys only, no password or root login; unattended security upgrades; time synchronisation (NTP); the admin port reachable only through a VPN such as WireGuard or an SSH tunnel; `journald` retention capped (`MaxRetentionSec=14day`); disk monitoring.  |
-| Operations    | An external uptime monitor on `https://<site>/api/health`; image updates (below); optional backups of the `cve-desk-data` volume (the cache can be rebuilt, so backups mainly preserve watch registrations); a data processing agreement (AVV/DPA) with the hosting provider; keeping the legal pages current. |
+| Layer         | Responsibility                                                                                                                                                                                                                                                                                                  |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| App           | Input validation, fixed upstream URLs, per-download size caps and deadlines, per-source backoff, rate limits, watch/cache caps, workspace expiry, security headers, sanitized errors, minimal logs, private admin port with optional token, watchdog restart.                                                   |
+| Container     | Non-root user, read-only root filesystem, `cap_drop: ALL`, `no-new-privileges`, memory/CPU/PID limits, log rotation, health check, restart policy (see `compose.yaml`).                                                                                                                                         |
+| Reverse proxy | TLS and HSTS, request body limit, unbuffered stream route, access-log minimisation (masked addresses, ≤ 14 days or off), no route to the admin port, optional extra request limits.                                                                                                                             |
+| Host          | Firewall allowing only 80/443 (and SSH/VPN); SSH with keys only, no password or root login; unattended security upgrades; time synchronisation (NTP); the admin port reachable only through a VPN such as WireGuard or an SSH tunnel; `journald` retention capped (`MaxRetentionSec=14day`); disk monitoring.   |
+| Operations    | An external uptime monitor on `https://<site>/api/health`; image updates (below); optional backups of the `isitfixed-data` volume (the cache can be rebuilt, so backups mainly preserve watch registrations); a data processing agreement (AVV/DPA) with the hosting provider; keeping the legal pages current. |
 
 ## Updates and rollback
 
-Pin the image by version tag (`ghcr.io/jaagut/cve-viewer:1.1.0`) or digest in production, and update deliberately:
+Pin the image by version tag (`ghcr.io/jaagut/isitfixed:1.1.0`) or digest in production, and update deliberately:
 
 ```sh
-docker pull ghcr.io/jaagut/cve-viewer:1.2.0
+docker pull ghcr.io/jaagut/isitfixed:1.2.0
 # change the tag in your deployment, then
 docker compose up -d
 ```
@@ -188,15 +188,33 @@ forward-only (`PRAGMA user_version`); an older release keeps working on a newer 
 so. Back up the volume before upgrading across a schema change if the watch registrations matter to you (the cache
 itself refills from the vendors). For a local checkout, `git pull && docker compose up --build -d` rebuilds the image.
 
-## Migrating from the ./data bind mount
+## Upgrading an existing CVE Desk deployment
 
-Earlier versions mounted `./data` into the container as root. The image now runs as uid 10001 and Compose uses the
-named volume `cve-desk-data`. Copy the old data once, fixing ownership:
+The rebrand changes the Compose volume name from `cve-desk-data` to `isitfixed-data`. Before upgrading, stop the old
+container and copy its volume into the new one (never copy a live SQLite database):
 
 ```sh
 docker compose down
-docker volume create cve-desk-data
-docker run --rm -v "$PWD/data:/from:ro" -v cve-desk-data:/to alpine \
+docker volume create isitfixed-data
+docker run --rm -v cve-desk-data:/from:ro -v isitfixed-data:/to alpine \
+  sh -c 'cp -a /from/. /to/ && chown -R 10001:10001 /to'
+docker compose up --build -d
+```
+
+Keep the old volume until you have verified the upgrade. Browser storage keys retain their original `cve-desk-`
+prefix so cases, preferences and anonymous watch registrations survive the rename on the same origin. Moving to a
+new domain is a different browser origin: export your workspace on the old domain and import it on the new domain.
+New application logs use `isitfixed.log`; the retention task also removes expired pre-rebrand logs.
+
+## Migrating from the ./data bind mount
+
+Earlier versions mounted `./data` into the container as root. The image now runs as uid 10001 and Compose uses the
+named volume `isitfixed-data`. Copy the old data once, fixing ownership:
+
+```sh
+docker compose down
+docker volume create isitfixed-data
+docker run --rm -v "$PWD/data:/from:ro" -v isitfixed-data:/to alpine \
   sh -c 'cp -a /from/. /to/ && chown -R 10001:10001 /to'
 docker compose up --build -d
 ```

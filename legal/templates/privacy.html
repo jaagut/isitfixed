@@ -1,8 +1,8 @@
 <!--
-  Template for the privacy policy (Datenschutzerklärung) of a CVE Desk instance operated from Germany.
+  Template for the privacy policy (Datenschutzerklärung) of a Is It Fixed instance operated from Germany.
   This is a template, not legal advice. Operators must review it and adapt it to their actual setup before
   publishing, in particular: reverse proxy and access logs, hosting provider, backups, and any changes to the code.
-  It describes the behavior of the unmodified CVE Desk application only.
+  It describes the behavior of the unmodified Is It Fixed application only.
   The German text is authoritative; the English text is a convenience translation.
   Placeholders ({{…}}) are filled from the LEGAL_* environment variables and server settings, see legal/README.md.
   Blocks between <!- - if:name - -> and <!- - endif:name - -> are removed when that value is empty.
@@ -30,15 +30,19 @@
   <p>
     Beim Aufruf überträgt Ihr Browser technisch bedingt Ihre IP-Adresse sowie Angaben wie die angefragte Adresse, Datum
     und Uhrzeit und die Browserkennung (User-Agent). Die IP-Adresse wird nur kurzfristig im Arbeitsspeicher verarbeitet,
-    um die Verbindung herzustellen und die Antwort auszuliefern. Die Übertragung erfolgt verschlüsselt (HTTPS).
+    um die Verbindung herzustellen und die Antwort auszuliefern, sowie in gekürzter Form für die Ratenbegrenzung (siehe
+    unten). Die Übertragung erfolgt verschlüsselt (HTTPS).
   </p>
   <p>
     Die Anwendung schreibt keine IP-Adressen und keine Workspace-IDs (siehe „Beobachtete Fälle auf dem Server“) in ihre
     Protokolle. Ihre Betriebsprotokolle enthalten nur technische Angaben wie Zeitpunkt, Art eines Fehlers oder den
     Status von Datenabrufen.
-    <!-- if:access_logs -->Der vorgeschaltete Webserver führt Zugriffsprotokolle (Zeitpunkt, angefragte Adresse,
-    Statuscode, Browserkennung); IP-Adressen werden darin nur gekürzt gespeichert (IPv4 auf die ersten drei Blöcke, IPv6
-    auf die ersten 48 Bit), sodass kein Rückschluss auf einen einzelnen Anschluss möglich ist.
+    <!-- if:access_logs -->Der vorgeschaltete Webserver führt Zugriffsprotokolle. Sie enthalten ausschließlich:
+    Zeitpunkt, gekürzte IP-Adresse (IPv4: die ersten 24 Bit, also die ersten drei Blöcke; IPv6: die ersten 48 Bit),
+    Anfragemethode, angefragten Pfad (einschließlich Abfrageparametern) mit entfernten Workspace-IDs, Statuscode, Größe
+    der Antwort und Bearbeitungsdauer. Anfrage-Header wie die Browserkennung (User-Agent) werden nicht gespeichert. Die
+    Kürzung der IP-Adresse erschwert die Zuordnung eines Eintrags zu einer bestimmten Person erheblich, schließt sie
+    aber nicht in jedem Fall aus.
     <!-- endif:access_logs -->Alle Protokolle werden nach spätestens {{log_retention_days}} Tagen gelöscht.
   </p>
   <p>
@@ -48,18 +52,19 @@
 
   <h3>Schutz vor Überlastung (Ratenbegrenzung)</h3>
   <p>
-    Um die Anzahl der Anfragen pro Minute zu begrenzen, bildet der Server aus Ihrer IP-Adresse mit einem geheimen,
-    zufälligen Schlüssel einen gekürzten Hashwert (HMAC) und führt dazu einen Anfragezähler. Die IP-Adresse selbst wird
-    dabei nicht gespeichert. Der Schlüssel wird nur im Arbeitsspeicher gehalten und alle 24 Stunden durch einen neuen
-    ersetzt; dabei werden alle Zähler verworfen, und Hashwerte verschiedener Tage lassen sich nicht verknüpfen.
-    Hashwerte, Zähler und Schlüssel werden weder auf einen Datenträger geschrieben noch protokolliert und gehen
-    spätestens beim Schlüsselwechsel oder bei einem Neustart verloren. Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO;
-    unser berechtigtes Interesse ist der Schutz des Dienstes vor Überlastung und Missbrauch.
+    Um die Anzahl der Anfragen pro Minute zu begrenzen, kürzt der Server Ihre IP-Adresse bei jeder Anfrage auf ihr
+    Netzwerkpräfix (IPv4: die ersten 24 Bit, IPv6: die ersten 48 Bit) und zählt die Anfragen je Präfix. Die vollständige
+    IP-Adresse wird dafür weder gespeichert noch über die Bearbeitung der jeweiligen Anfrage hinaus aufbewahrt. Die
+    Zähler und die zugehörigen gekürzten Präfixe liegen nur im Arbeitsspeicher, werden weder auf einen Datenträger
+    geschrieben noch protokolliert und verfallen mit ihrem Zeitfenster, spätestens bei einem Neustart. Ein Präfix wird
+    in der Regel von vielen Anschlüssen geteilt; das erschwert die Zuordnung zu einer bestimmten Person erheblich.
+    Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO; unser berechtigtes Interesse ist der Schutz des Dienstes vor
+    Überlastung und Missbrauch.
   </p>
 
   <h3>Speicherung in Ihrem Browser (Local Storage)</h3>
   <p>
-    CVE Desk speichert im lokalen Speicher (Local Storage) Ihres Browsers: Ihre Fälle (CVE-Kennungen, ausgewählte
+    Is It Fixed speichert im lokalen Speicher (Local Storage) Ihres Browsers: Ihre Fälle (CVE-Kennungen, ausgewählte
     Betriebssysteme, zuletzt abgerufene Herstellerdaten, Archiv- und Gelesen-Status), Ihre Einstellungen, die
     Bestätigung des Hinweises beim ersten Besuch und eine zufällig erzeugte, anonyme Workspace-ID. Diese Daten bleiben
     auf Ihrem Gerät; an den Server gelangen nur die unter „Beobachtete Fälle auf dem Server“ genannten Angaben. Cookies
@@ -163,7 +168,7 @@
   <h2>Privacy policy</h2>
   <p><em>Convenience translation. The German version above is authoritative.</em></p>
   <p>
-    This policy informs you under Art. 13 GDPR which personal data is processed when you use CVE Desk<!-- if:site_url -->
+    This policy informs you under Art. 13 GDPR which personal data is processed when you use Is It Fixed<!-- if:site_url -->
     at {{site_url}}<!-- endif:site_url -->. In short: there are no user accounts, no cookies, no tracking and no
     third-party content. Your cases are stored in your browser.
   </p>
@@ -179,15 +184,18 @@
   <p>
     When you visit the site, your browser necessarily transmits your IP address and details such as the requested
     address, date and time, and the browser identifier (user agent). The IP address is processed only briefly in memory
-    to establish the connection and deliver the response. The connection is encrypted (HTTPS).
+    to establish the connection and deliver the response, and in shortened form for rate limiting (see below). The
+    connection is encrypted (HTTPS).
   </p>
   <p>
     The application does not write IP addresses or workspace IDs (see “Watched cases on the server”) to its logs. Its
     operational logs only contain technical details such as timestamps, the kind of an error or the status of data
     retrievals.
-    <!-- if:access_logs -->The upstream web server keeps access logs (time, requested address, status code, browser
-    identifier); IP addresses are stored there only in shortened form (IPv4 truncated to the first three blocks, IPv6 to
-    the first 48 bits), so they cannot be traced to an individual connection.
+    <!-- if:access_logs -->The upstream web server keeps access logs. They contain only: time, shortened IP address
+    (IPv4: the first 24 bits, i.e. the first three blocks; IPv6: the first 48 bits), request method, requested path
+    (including query parameters) with workspace IDs removed, status code, response size and processing time. Request
+    headers such as the browser identifier (user agent) are not stored. Shortening the IP address greatly reduces the
+    possibility of linking an entry to a specific person, but does not rule it out in every case.
     <!-- endif:access_logs -->All logs are deleted after {{log_retention_days}} days at the latest.
   </p>
   <p>
@@ -197,20 +205,21 @@
 
   <h3>Protection against overload (rate limiting)</h3>
   <p>
-    To limit the number of requests per minute, the server derives a truncated hash (HMAC) from your IP address using a
-    secret random key and keeps a request counter for it. The IP address itself is not stored. The key is held only in
-    memory and replaced every 24 hours; this discards all counters, and hashes from different days cannot be linked.
-    Hashes, counters and keys are never written to disk or logged and are lost at the latest when the key changes or the
-    server restarts. The legal basis is Art. 6(1)(f) GDPR; our legitimate interest is protecting the service from
-    overload and abuse.
+    To limit the number of requests per minute, the server shortens your IP address on every request to its network
+    prefix (IPv4: the first 24 bits, IPv6: the first 48 bits) and counts requests per prefix. The full IP address is
+    neither stored for this nor kept beyond the processing of the respective request. The counters and their shortened
+    prefixes are held only in memory, are never written to disk or logged, and expire with their time window, at the
+    latest when the server restarts. A prefix is usually shared by many connections, which greatly reduces the
+    possibility of linking it to a specific person. The legal basis is Art. 6(1)(f) GDPR; our legitimate interest is
+    protecting the service from overload and abuse.
   </p>
 
   <h3>Storage in your browser (local storage)</h3>
   <p>
-    CVE Desk stores in your browser's local storage: your cases (CVE IDs, selected operating systems, the most recently
-    retrieved vendor data, archive and read status), your settings, the acknowledgement of the first-visit notice, and a
-    randomly generated anonymous workspace ID. This data stays on your device; only the details listed under “Watched
-    cases on the server” reach the server. No cookies are used.
+    Is It Fixed stores in your browser's local storage: your cases (CVE IDs, selected operating systems, the most
+    recently retrieved vendor data, archive and read status), your settings, the acknowledgement of the first-visit
+    notice, and a randomly generated anonymous workspace ID. This data stays on your device; only the details listed
+    under “Watched cases on the server” reach the server. No cookies are used.
   </p>
   <p>
     This storage is strictly necessary for the service you explicitly requested — saving and tracking your cases — to

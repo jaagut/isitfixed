@@ -10,7 +10,7 @@ from time import gmtime, strftime
 
 import httpx
 
-logger = logging.getLogger("cve-desk.sources")
+logger = logging.getLogger("isitfixed.sources")
 
 _IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 _IPV6 = re.compile(r"(?<![\w:])[0-9A-Fa-f]{0,4}(?::[0-9A-Fa-f]{0,4}){3,7}(?![\w:])")
@@ -23,6 +23,10 @@ class NotPublished(Exception):  # noqa: N818 - a "not published" signal, not an 
 
 class TooLarge(Exception):  # noqa: N818 - reads naturally as "response too large"
     """A download exceeded its size cap."""
+
+
+class Busy(Exception):  # noqa: N818 - a local admission state, not an upstream error
+    """The shared download memory budget is exhausted; try again later."""
 
 
 class Paused(Exception):  # noqa: N818 - a circuit-breaker state, not an upstream error
@@ -65,6 +69,8 @@ def describe(exc):
         return f"HTTP {exc.response.status_code} from {_host(exc)}"
     if isinstance(exc, TooLarge):
         return "response too large"
+    if isinstance(exc, Busy):
+        return "server busy, try again later"
     if isinstance(exc, (TimeoutError, httpx.TimeoutException)):
         return "request timed out"
     if isinstance(exc, httpx.RequestError):
@@ -85,7 +91,7 @@ def describe(exc):
 
 def log_failure(source, exc):
     """Log the technical detail of a failure server-side, without addresses or workspace ids."""
-    if isinstance(exc, (NotPublished, Paused)):
+    if isinstance(exc, (NotPublished, Paused, Busy)):
         return
     detail = scrub(str(exc))[:300]
     logger.warning(

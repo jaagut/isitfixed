@@ -12,25 +12,35 @@ test('theme setting accepts system, light and dark and falls back to system', ()
 
 // src/theme.js runs before the app module to avoid a flash of the wrong theme.
 const script = await readFile(new URL('../src/theme.js', import.meta.url), 'utf8');
-function runThemeScript(saved, { throws = false } = {}) {
-  const documentElement = { dataset: {} };
+function runThemeScript(saved, { throws = false, theme = null } = {}) {
+  const documentElement = { dataset: {} },
+    reads = [];
   const localStorage = {
     getItem(key) {
+      reads.push(key);
       if (throws) throw new Error('SecurityError');
+      if (key === 'cve-desk-theme') return theme;
       return key === 'cve-desk-v1' ? saved : null;
     },
   };
   runInNewContext(script, { document: { documentElement }, localStorage, JSON });
-  return documentElement.dataset.theme;
+  return Object.assign([documentElement.dataset.theme], { reads });
 }
+const applied = (...args) => runThemeScript(...args)[0];
 
 test('early theme script applies only a saved light or dark theme', () => {
-  assert.equal(runThemeScript(JSON.stringify({ theme: 'dark' })), 'dark');
-  assert.equal(runThemeScript(JSON.stringify({ theme: 'light' })), 'light');
-  assert.equal(runThemeScript(JSON.stringify({ theme: 'system' })), undefined);
-  assert.equal(runThemeScript(JSON.stringify({ theme: '"><script>' })), undefined);
-  assert.equal(runThemeScript(JSON.stringify({ version: 1 })), undefined);
-  assert.equal(runThemeScript(null), undefined);
-  assert.equal(runThemeScript('{not json'), undefined);
-  assert.equal(runThemeScript('', { throws: true }), undefined);
+  assert.equal(applied(null, { theme: 'dark' }), 'dark');
+  assert.equal(applied(null, { theme: 'light' }), 'light');
+  assert.equal(applied(JSON.stringify({ theme: 'dark' }), { theme: 'system' }), undefined, 'the theme key wins');
+  assert.equal(applied(null, { theme: '"><script>' }), undefined);
+  // The workspace is parsed only while the theme key does not exist yet (saves from older versions).
+  assert.deepEqual(runThemeScript(JSON.stringify({ theme: 'dark' }), { theme: 'light' }).reads, ['cve-desk-theme']);
+  assert.equal(applied(JSON.stringify({ theme: 'dark' })), 'dark');
+  assert.equal(applied(JSON.stringify({ theme: 'light' })), 'light');
+  assert.equal(applied(JSON.stringify({ theme: 'system' })), undefined);
+  assert.equal(applied(JSON.stringify({ theme: '"><script>' })), undefined);
+  assert.equal(applied(JSON.stringify({ version: 1 })), undefined);
+  assert.equal(applied(null), undefined);
+  assert.equal(applied('{not json'), undefined);
+  assert.equal(applied('', { throws: true }), undefined);
 });

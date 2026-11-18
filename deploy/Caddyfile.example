@@ -1,8 +1,19 @@
-# Example Caddy (v2.7+) reverse proxy for a public CVE Desk instance.
-# Caddy obtains and renews the TLS certificate automatically. Replace cve.example.com with your domain.
+# HTTP error entries contain requests (including workspace bearer IDs). Drop the request object.
+{
+ log default {
+  level ERROR
+  format filter {
+   wrap json
+   request delete
+  }
+ }
+}
+
+# Example Caddy (v2.10+) reverse proxy for a public Is It Fixed instance.
+# Caddy obtains and renews the TLS certificate automatically. Replace isitfixed.app with your domain.
 # The admin dashboard (port 8081) is deliberately NOT proxied: reach it over a VPN or SSH tunnel only.
 # Compression is left to the app, which gzips JSON and static files but never the NDJSON progress stream.
-cve.example.com {
+isitfixed.app {
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		-Server
@@ -28,20 +39,6 @@ cve.example.com {
 		}
 	}
 
-	# Access log with truncated client addresses (IPv4 /24, IPv6 /48), kept for 14 days at most.
-	# To disable access logging entirely, remove this block (Caddy then logs no requests).
-	log {
-		output file /var/log/caddy/cve-desk-access.log {
-			roll_size 20MiB
-			roll_keep 14
-			roll_keep_for 336h
-		}
-		format filter {
-			request>remote_ip ip_mask 24 48
-			request>client_ip ip_mask 24 48
-			request>headers>X-Forwarded-For delete
-			request>headers>Cookie delete
-			request>headers>Authorization delete
-		}
-	}
+	# Access logging is off. To enable it, use the filtered, age-limited configuration
+	# in isitfixed-deploy/modules/caddy.nix and set LEGAL_ACCESS_LOGS=true in the app.
 }

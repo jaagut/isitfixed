@@ -13,7 +13,7 @@ body:
     id: proposal
     attributes:
       label: Proposal
-      description: How could CVE Desk help? For a new vendor source, link its official machine-readable feed and license.
+      description: How could Is It Fixed help? For a new vendor source, link its official machine-readable feed and license.
     validations:
       required: true
   - type: textarea

@@ -165,6 +165,42 @@ test('SLES 15: drops the rebuild counter, keeps azure and default apart, flavour
   assert.equal(t.ksp.release, '20.0.3-36300');
 });
 
+test('SLES and RHEL: preempt, rt, 64kb and other flavours match only kernels of the same flavour', () => {
+  const sles = {
+    releases: [agent('x86_64', ['5_3_18_150300_59_158_preempt', '5_3_18_150300_59_226_default'])],
+    ksp: [
+      ksp('SuSE_15', 'x86_64', [
+        ['5.3.18-150300.59.230-default', 'default', '20.0.3-36500', false],
+        ['5.3.18-150300.59.230-azure', 'azure', '20.0.3-36500', false],
+      ]),
+      ksp('SuSE_15', 'aarch64', [['6.4.0-150600.23.70-64kb', '64kb', '20.0.3-36500', false]]),
+    ],
+  };
+  const preempt = kernelSupport('sles', ['kernel-preempt-5.3.18-150300.59.200.1'], sles);
+  assert.deepEqual(statuses(preempt), [['5.3.18-150300.59.200-preempt', 'pending']]);
+  assert.equal(cell(preempt, 0).agent.kernel, '5.3.18-150300.59.158-preempt');
+  assert.equal(cell(preempt, 0).ksp.status, 'unknown', 'a newer default kernel does not cover preempt');
+  // Flavours Trend Micro lists nowhere stay out instead of borrowing the default kernel.
+  assert.equal(kernelSupport('sles', ['kernel-rt-5.3.18-150300.59.200.1'], sles).status, 'none');
+  assert.equal(kernelSupport('sles', ['kernel-zfcpdump-5.3.18-150300.59.200.1'], sles).status, 'none');
+  const arm = kernelSupport('sles', ['kernel-64kb-6.4.0-150600.23.70.1', 'kernel-default-6.4.0-150600.23.70.1'], sles);
+  assert.equal(cell(arm, 0, 'aarch64').ksp.kernel, '6.4.0-150600.23.70-64kb');
+  assert.equal(cell(arm, 1, 'aarch64').ksp.status, 'unknown', 'default is not covered by a 64kb kernel');
+  const rhel = {
+    ksp: [
+      ksp('RedHat_EL9', 'x86_64', [
+        ['5.14.0-427.20.1.el9_4.x86_64', 'default', null, false],
+        ['5.14.0-427.13.1.el9_4.x86_64+rt', 'rt', null, false],
+      ]),
+    ],
+  };
+  const rt = kernelSupport('rhel', ['kernel-rt-5.14.0-427.18.1.el9_4', 'kernel-rt-core-5.14.0-427.18.1.el9_4'], rhel);
+  assert.deepEqual(statuses(rt), [['5.14.0-427.18.1.el9_4+rt', 'pending']]);
+  assert.equal(cell(rt, 0).ksp.kernel, '5.14.0-427.13.1.el9_4.x86_64+rt');
+  assert.equal(kernelSupport('rhel', ['kernel-64k-5.14.0-427.18.1.el9_4'], rhel).status, 'none');
+  assert.equal(kernelSupport('rhel', ['kernel-core-5.14.0-427.18.1.el9_4'], rhel).status, 'supported');
+});
+
 test('SLES 15 SP7 and 16: a newer service pack is "not yet"; an old unlisted one is unknown', () => {
   const sp7 = kernelSupport('sles', ['kernel-default-6.4.0-150700.53.34.1'], {
     releases: [agent('x86_64', ['6_4_0_150600_23_70_default'])],
@@ -250,13 +286,15 @@ test('Ubuntu 24.04: azure and nvidia cloud kernels; unlisted flavours are left o
   assert.equal(kernelSupport('ubuntu', ['linux-raspi-realtime 6.8.0-2001.1'], inventory).status, 'none');
 });
 
-test('Debian 13: the release tag maps upstream-named kernels to the `linux` source package', () => {
+test('Debian 13: kernels match the fix only within its upstream series (backports are other series)', () => {
   const inventory = {
     releases: [agent('x86_64', ['6_12_100+deb13_amd64', '6_12_100+deb13_cloud_amd64', '6_12_74+deb13+1_amd64'])],
     ksp: [
       ksp('Debian_13', 'x86_64', [
         ['6.12.38+deb13-amd64', 'default', null, false],
         ['6.12.41+deb13-cloud-amd64', 'cloud', null, false],
+        // trixie-backports kernels carry +deb13 too.
+        ['6.16.3+deb13-amd64', 'default', '20.0.3-36400', false],
         ['7.1.13+deb13-amd64', 'default', '20.0.3-36500', false],
       ]),
     ],
@@ -264,13 +302,52 @@ test('Debian 13: the release tag maps upstream-named kernels to the `linux` sour
   const t = kernelSupport('debian', ['linux 6.12.113-1'], inventory);
   assert.equal(cell(t, 0).agent.status, 'pending');
   assert.equal(cell(t, 0).agent.kernel, '6.12.100+deb13-amd64');
-  assert.equal(cell(t, 0).ksp.kernel, '7.1.13+deb13-amd64', 'a later version of `linux` in trixie');
-  assert.equal(cell(t, 0).ksp.since, '20.0.3-36500');
-  assert.equal(t.status, 'supported');
-  // Fixed before the release: every listed trixie kernel is a later version of `linux`.
+  assert.equal(cell(t, 0).ksp.status, 'pending', 'a 6.16 or 7.1 backport kernel says nothing about 6.12');
+  assert.equal(cell(t, 0).ksp.kernel, '6.12.38+deb13-amd64');
+  assert.equal(t.status, 'pending');
+  const listed = kernelSupport('debian', ['linux 6.12.38-1'], inventory);
+  assert.equal(listed.status, 'supported');
+  assert.equal(cell(listed, 0).ksp.exact, true);
+  assert.equal(cell(listed, 0).agent.kernel, '6.12.74+deb13+1-amd64');
+  // Fixed before the release: every kernel of trixie's 6.12 series is a later version of `linux`.
   const old = kernelSupport('debian', ['linux 6.6.15-1'], inventory);
   assert.equal(old.status, 'supported');
+  assert.equal(cell(old, 0).ksp.kernel, '6.12.38+deb13-amd64');
   assert.equal(cell(old, 0).agent.exact, false);
+});
+
+test('Debian: a fix in a later revision of a listed upstream version is not verifiable', () => {
+  const inventory = {
+    releases: [],
+    ksp: [
+      ksp('Debian_13', 'x86_64', [
+        ['6.12.90+deb13-amd64', 'default', null, false],
+        ['6.12.90+deb13.1-amd64', 'default', null, false],
+        ['6.12.94+deb13-amd64', 'default', '20.0.3-36500', false],
+      ]),
+    ],
+  };
+  // The first upload of 6.12.90 is 6.12.90+deb13; a respin is newer than it.
+  const first = kernelSupport('debian', ['linux 6.12.90-1'], inventory);
+  assert.equal(cell(first, 0).ksp.exact, true);
+  // 6.12.90-2 may or may not be the +deb13.1 respin: unverifiable, never an exact match.
+  const only = { releases: [], ksp: [ksp('Debian_13', 'x86_64', inventory.ksp[0].kernels.slice(0, 2))] };
+  const respin = kernelSupport('debian', ['linux 6.12.90-2'], only);
+  assert.equal(respin.status, 'unknown');
+  assert.equal(cell(respin, 0).ksp.revision, true);
+  assert.equal(cell(respin, 0).ksp.kernel, '6.12.90+deb13.1-amd64');
+  // A newer upstream version is a later version of the package either way.
+  const newer = kernelSupport('debian', ['linux 6.12.90-2'], inventory);
+  assert.equal(newer.status, 'supported');
+  assert.equal(cell(newer, 0).ksp.kernel, '6.12.94+deb13-amd64');
+  assert.equal(cell(newer, 0).ksp.exact, false);
+  // bookworm's linux-6.12: ~deb12u1 is the first upload, ~deb12u2 a later revision.
+  const bookworm = {
+    releases: [],
+    ksp: [ksp('Debian_12', 'x86_64', [['6.12.90+deb12-amd64', 'default', null, false]])],
+  };
+  assert.equal(kernelSupport('debian', ['linux-6.12 6.12.90-1~deb12u1'], bookworm).status, 'supported');
+  assert.equal(kernelSupport('debian', ['linux-6.12 6.12.90-1~deb12u2'], bookworm).status, 'unknown');
 });
 
 test('Debian 12: ABI-named kernels are not verifiable; linux-6.12 and backports are separate', () => {
@@ -288,8 +365,8 @@ test('Debian 12: ABI-named kernels are not verifiable; linux-6.12 and backports 
   assert.equal(kernelSupport('debian', ['linux 6.1.190-1'], inventory).status, 'unknown');
   const t = kernelSupport('debian', ['linux 6.1.190-1', 'linux-6.12 6.12.113-1~deb12u1'], inventory);
   assert.deepEqual(statuses(t), [
-    ['linux 6.1.190', 'unknown'],
-    ['linux-6.12 6.12.113', 'supported'],
+    ['linux 6.1.190-1', 'unknown'],
+    ['linux-6.12 6.12.113-1~deb12u1', 'supported'],
   ]);
   assert.equal(cell(t, 1).agent.status, 'pending', 'bundled 6.12.90+deb12.1 is older');
   assert.equal(cell(t, 1).ksp.kernel, '6.12.117+deb12-amd64');

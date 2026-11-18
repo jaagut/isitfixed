@@ -3,7 +3,7 @@
 import time
 from dataclasses import dataclass
 
-from .errors import NotPublished, Paused, describe, log_failure
+from .errors import Busy, NotPublished, Paused, describe, log_failure
 
 MINUTE = 60
 MAX_DELAY = 30 * MINUTE
@@ -48,8 +48,8 @@ class Breaker:
 
     def record(self, source, result):
         """Record a completed attempt; ``result`` is the returned value or the raised exception."""
-        if isinstance(result, Paused):
-            return
+        if isinstance(result, (Paused, Busy)):
+            return  # upstream was not (fully) contacted: neither a success nor a source failure
         if isinstance(result, NotPublished) or not isinstance(result, BaseException):
             self.success(source)
             return

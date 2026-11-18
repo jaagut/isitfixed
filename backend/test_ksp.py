@@ -115,10 +115,18 @@ def test_kernels_not_seen_for_ten_days_are_dropped(tmp_path):
     reduced = FIXTURE.replace("<tr><td>6.8.0-1068-azure</td>", "<tr><td>x</td>")
     ksp.store(parse(reduced), clock())
     ksp.cleanup()
-    assert ("6.8.0-1068-azure", "azure") in kernels(ksp, "ubuntu2404")
+    # Removed kernels disappear from the public inventory immediately, while history remains
+    # until the retention window expires.
+    assert ("6.8.0-1068-azure", "azure") not in kernels(ksp, "ubuntu2404")
+    assert (
+        cache.db.execute("SELECT COUNT(*) FROM ksp_kernels WHERE kernel = ?", ("6.8.0-1068-azure",)).fetchone()[0] == 1
+    )
     clock.now += 120
     ksp.cleanup()
     assert ("6.8.0-1068-azure", "azure") not in kernels(ksp, "ubuntu2404")
+    assert (
+        cache.db.execute("SELECT COUNT(*) FROM ksp_kernels WHERE kernel = ?", ("6.8.0-1068-azure",)).fetchone()[0] == 0
+    )
     assert ("6.8.0-31-generic", "generic") in kernels(ksp, "ubuntu2404")
     cache.close()
 
@@ -177,9 +185,9 @@ def test_api_returns_the_contract_shape(tmp_path):
         assert entry["kernels"][0] == ["5.14.0-70.13.1.el9_0.x86_64", "default", None, False]
 
 
-def test_tmds_disabled_starts_no_jobs_and_reports_disabled(tmp_path):
+def test_tmds_disabled_starts_no_tmds_jobs_and_reports_disabled(tmp_path):
     settings = Settings(admin_port=None, tmds_enabled=False)
     with TestClient(create_app(tmp_path / "off.sqlite3", settings=settings)) as client:
         assert client.get("/api/tmds").json() == {"enabled": False}
-        assert set(client.app.state.workers) == {"refresh"}
+        assert set(client.app.state.workers) == {"refresh", "maintenance"}
         assert client.get("/api/config").json()["tmds"] is False

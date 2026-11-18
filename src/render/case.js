@@ -3,7 +3,7 @@
 //   { state, config, inventory: {data, error}, tmdsOn, busy: Set, chooserOpen, groupOverride: Map, now }
 import { VENDORS, PRODUCTS, vendorURL, groupFixes, splitPackage } from '../data.js';
 import { rowAssessment, CNA_SOURCE } from '../rows.js';
-import { kernelSupport, supportSummary, productInventory, isKernelFix, kspName } from '../tmds.js';
+import { kernelSupport, supportSummary, productInventory, isKernelFix, kspName, kernelFamilies } from '../tmds.js';
 import { sourceCards, sourceSummary, SOURCE_STATES } from '../sources.js';
 import { esc, safeURL, externalLink, sourceLink, isSafeURL, date, time, day, plural, icons } from '../util.js';
 import { labels, badge, selected, sum, statusCounts, logo } from './common.js';
@@ -211,7 +211,14 @@ function sourceRef(c, p, name) {
   else url = c.vendorData?.sources?.[p.family]?.url || vendorURL(p, c.id);
   return url && isSafeURL(url) ? externalLink(safeURL(url), `${esc(name)} ↗`) : `${esc(name)} (local file)`;
 }
-const advisoryLabel = (url) => esc(decodeURIComponent(String(url).split('/').filter(Boolean).pop() || url));
+function advisoryLabel(url) {
+  const last = String(url).split('/').filter(Boolean).pop() || String(url);
+  try {
+    return esc(decodeURIComponent(last));
+  } catch {
+    return esc(last); // Malformed percent-encoding: show it as published.
+  }
+}
 // Source line of the assessment column, with row-level advisories (first two inline, all in a list).
 function assessmentSources(c, p, row) {
   if (!row.sources.length) return '';
@@ -295,8 +302,12 @@ export const tmdsLabels = {
 };
 const DEBIAN_ABI =
   'Debian kernels named by ABI (such as 6.1.0-N-amd64) do not reveal the package version, so this cannot be matched automatically.';
+// The fix is a later package revision of an upstream version that is listed (Debian respins).
+const revisionText = (kernel) =>
+  `Lists <code>${esc(kernel)}</code> of the same upstream version; whether that build includes this package revision cannot be verified.`;
 function agentText(cell, family) {
   const a = cell.agent;
+  if (a.revision) return `Agent ${esc(a.release.release)}: ${revisionText(a.kernel)}`;
   if (a.status === 'supported') {
     const kind = a.exact ? 'bundles' : 'bundles newer';
     return `${sourceLink(a.release.download, `Agent ${a.release.release} or later`)} · ${kind} <code>${esc(a.kernel)}</code>`;
@@ -317,6 +328,7 @@ function kspText(cell, family) {
       : '';
     return `${sourceLink(k.entry.download, kspName(k.entry))} — ${since} (lists <code>${esc(k.kernel)}</code>)${delta}`;
   }
+  if (k.revision) return revisionText(k.kernel);
   if (k.status === 'pending') return `Not yet supported (newest listed: <code>${esc(k.kernel)}</code>)`;
   if (k.status === 'unknown') return family === 'debian' ? DEBIAN_ABI : 'No listed kernel of this stream.';
   return 'No Kernel Support Package for this architecture.';
@@ -335,6 +347,8 @@ function tmdsBranch(b, family, many) {
   return `<div class="tmds-branch ${b.status}">${head}<dl class="tmds-cells">${cells.join('')}</dl></div>`;
 }
 function tmdsFact(p, fixes, ctx) {
+  // Only families Trend Micro kernel lists can be matched for (not Alpine or Windows).
+  if (!kernelFamilies.includes(p.family)) return '';
   const kernels = fixes.filter(isKernelFix);
   if (!kernels.length) return '';
   const { data, error } = ctx.inventory;
@@ -405,8 +419,9 @@ function sourceCard(s) {
   ].join('');
   const retry = s.retryAfter ? ` Next attempt ${esc(time(s.retryAfter))}.` : '';
   const warnings = s.warnings.map((w, i) => `<p class="source-warning">${esc(w)}${i === 0 ? retry : ''}</p>`).join('');
-  const excluded = s.excludedImages
-    ? `<p class="source-note">${plural(s.excludedImages, 'public-cloud image entry', 'public-cloud image entries')} not counted in OS rows; see the vendor source.</p>`
+  const images = Math.max(0, Math.floor(Number(s.excludedImages) || 0));
+  const excluded = images
+    ? `<p class="source-note">${plural(images, 'public-cloud image entry', 'public-cloud image entries')} not counted in OS rows; see the vendor source.</p>`
     : '';
   const advisories = s.advisories.length
     ? [

@@ -136,7 +136,7 @@ jobs:
           context: .
           push: false
           load: true
-          tags: cve-desk:ci
+          tags: isitfixed:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -144,7 +144,7 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: ${{ env.TRIVY_VERSION }}
-          image-ref: cve-desk:ci
+          image-ref: isitfixed:ci
           format: sarif
           output: trivy-results.sarif
           ignore-unfixed: true
@@ -165,7 +165,7 @@ jobs:
         with:
           version: ${{ env.TRIVY_VERSION }}
           skip-setup-trivy: true
-          image-ref: cve-desk:ci
+          image-ref: isitfixed:ci
           format: table
           severity: CRITICAL,HIGH
           ignore-unfixed: true

@@ -1,11 +1,11 @@
 # Operations
 
-Day-to-day running of a CVE Desk instance. Configuration is described in [deployment.md](deployment.md).
+Day-to-day running of an Is It Fixed instance. Configuration is described in [deployment.md](deployment.md).
 
 ## Admin dashboard
 
 The dashboard is a second server in the same process on `ADMIN_PORT` (default 8081). It is meant for the operator
-only: never route it through the public reverse proxy; reach it through a VPN (for example WireGuard) or an SSH tunnel:
+only: never route it through the public reverse proxy; reach it through a VPN (for example Tailscale) or an SSH tunnel:
 
 ```sh
 ssh -L 8081:127.0.0.1:8081 your-server   # then open http://localhost:8081
@@ -36,10 +36,10 @@ current and the previous full hour bucket.
 
 ## Health and restarts
 
-`GET /api/health` answers 200 while the process serves HTTP; point an external uptime monitor at it. `status` is
-`degraded` when a background worker has not made progress for a while (10 minutes for the refresh worker, 30 minutes
-for the inventory workers); the `workers` object has each worker's heartbeat age in seconds. Upstream outages do not
-affect health: they appear as source errors and backoff on the dashboard.
+`GET /api/health` returns HTTP 200 with status `ok` or `degraded` for upstream outages, and HTTP 503
+with status `stalled` when a background worker is stuck or dead. Point an external uptime monitor at
+it expecting HTTP 200. The `workers` object includes each worker's heartbeat age; source errors and
+backoff are also visible on the dashboard.
 
 A watchdog thread exits the process (status 1, logged as `CRITICAL`) when the event loop has been unresponsive for
 `WATCHDOG_TIMEOUT` seconds (default 120); the restart policy (`restart: unless-stopped`) then starts a fresh container.
@@ -60,7 +60,7 @@ state is held in memory and resets on restart.
 ## Logs
 
 - Standard output (`docker compose logs`) only carries warnings and errors.
-- With `LOG_DIR` (default `/data/logs` in the image), `cve-desk.log` gets messages at `LOG_LEVEL` (default `INFO`),
+- With `LOG_DIR` (default `/data/logs` in the image), `isitfixed.log` gets messages at `LOG_LEVEL` (default `INFO`),
   rotates at midnight UTC and keeps at most `LOG_RETENTION_DAYS` days (≤ 14). Older files are deleted at startup too.
 - There is no access log in the app. Client addresses, workspace ids and tokens are never logged; IP-like strings in
   messages are redacted.

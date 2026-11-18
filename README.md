@@ -1,12 +1,14 @@
-# CVE Desk
+# Is It Fixed
 
-CVE Desk is a small, self-hostable workspace for tracking individual CVEs across Linux distributions and Windows. Open a
+Public site: [isitfixed.app](https://isitfixed.app).
+
+Is It Fixed is a small, self-hostable workspace for tracking individual CVEs across Linux distributions and Windows. Open a
 case for a CVE, pick the OS versions you run, and see per-version vendor status, published fixes and advisories in one
 place. The server keeps the vendor data current; your cases stay in your browser.
 
 <!-- Screenshot: add docs/screenshot.png here once a public instance exists. -->
 
-> **Disclaimer.** CVE Desk is an informational tool. Data comes from public vendor sources and may be incomplete,
+> **Disclaimer.** Is It Fixed is an informational tool. Data comes from public vendor sources and may be incomplete,
 > delayed or wrong. No warranty — use at your own discretion and verify with the vendor before acting. Not affiliated
 > with or endorsed by Red Hat, SUSE, Canonical, Debian, Alpine, Microsoft or Trend Micro.
 
@@ -31,22 +33,27 @@ place. The server keeps the vendor data current; your cases stay in your browser
 Requirements: Docker with the Compose plugin.
 
 ```sh
-git clone https://github.com/jaagut/cve-viewer.git
-cd cve-viewer
+git clone https://github.com/jaagut/isitfixed.git
+cd isitfixed
 docker compose up --build -d
 ```
 
 Open <http://localhost:8080>. The app and API are served from one container. Data (SQLite cache, watch registrations,
-agent inventory, logs) is stored in `./data`, mounted at `/data`, and survives rebuilds. Your cases and settings stay in
-your browser.
+agent inventory, logs) is stored in the named Docker volume `isitfixed-data`, mounted at `/data`, and survives rebuilds.
+Your cases and settings stay in your browser.
 
 ```sh
 docker compose logs -f app   # follow logs
 docker compose up --build -d # update after git pull
-docker compose down          # stop (keeps ./data)
+docker compose down          # stop (keeps the isitfixed-data volume)
 ```
 
-A prebuilt image is published as `ghcr.io/jaagut/cve-viewer` (tags `latest`, `X.Y.Z`, `main`, `sha-<commit>`). For
+> **Upgrading from an older checkout?** Compose used to bind-mount `./data`; it now uses the named volume
+> `isitfixed-data`. Copy your existing data into the volume before starting the new version, as described in
+> [Migrating from the ./data bind mount](docs/deployment.md#migrating-from-the-data-bind-mount). Otherwise the app
+> starts with an empty cache and without the existing watch registrations.
+
+A prebuilt image is published as `ghcr.io/jaagut/isitfixed` (tags `latest`, `X.Y.Z`, `main`, `sha-<commit>`). For
 public hosting behind a reverse proxy (HTTPS, trusted proxy IPs, imprint and privacy pages, admin dashboard), read
 [docs/deployment.md](docs/deployment.md) and [docs/operations.md](docs/operations.md). HTTPS is required for desktop
 notifications outside `localhost`.
@@ -62,15 +69,16 @@ is in [docs/deployment.md](docs/deployment.md).
 | `SITE_URL` / `SOURCE_URL`                   | – / this repository   | Public URL of this instance / link to the source code shown in the footer |
 | `MANUAL_REFRESH`                            | `false`               | Show the **Refresh data** button and allow forced upstream refreshes      |
 | `TMDS_ENABLED`                              | `true`                | Run the Trend Micro agent and Kernel Support Package inventory jobs       |
-| `MAX_WATCHED_CVES` / `MAX_CACHED_CVES`      | `1000` / `1000`       | Global caps for watched and cached CVEs                                   |
+| `MAX_WATCHED_CVES` / `MAX_CACHED_CVES`      | `1000` / `1500`       | Global caps for watched and cached CVEs (cached must exceed watched)      |
 | `MAX_WATCHES_PER_WORKSPACE`                 | `200`                 | Cases one browser workspace may watch                                     |
+| `MAX_WORKSPACES` / `MAX_WATCH_ROWS`         | `5000` / `50000`      | Global caps for workspaces and watch registrations                        |
 | `WORKSPACE_TTL_DAYS`                        | `30`                  | Drop watch registrations of workspaces not seen for this many days        |
-| `RATE_LIMIT_REQUESTS`                       | `240`                 | Requests per minute per client (`0` disables a limit)                     |
-| `RATE_LIMIT_LOOKUPS` / `RATE_LIMIT_WATCHES` | `20` / `12`           | CVE lookups / watch syncs per minute per client                           |
+| `RATE_LIMIT_REQUESTS`                       | `300`                 | Requests per minute per client prefix (`0` disables a limit)              |
+| `RATE_LIMIT_LOOKUPS` / `RATE_LIMIT_WATCHES` | `30` / `12`           | CVE lookups / watch syncs per minute per client prefix                    |
 | `RATE_LIMIT_LOOKUPS_GLOBAL`                 | `120`                 | CVE lookups per minute across all clients                                 |
 | `FORWARDED_ALLOW_IPS`                       | `127.0.0.1`           | Reverse proxy IPs trusted for `X-Forwarded-For`                           |
 | `LOG_DIR` / `LOG_LEVEL`                     | – / `INFO`            | Application log directory (the image uses `/data/logs`) and level         |
-| `LOG_RETENTION_DAYS`                        | `14`                  | Log retention (maximum 14)                                                |
+| `LOG_RETENTION_DAYS`                        | `14`                  | Days the app keeps its log files (maximum 14), enforced daily             |
 | `ADMIN_PORT` / `ADMIN_TOKEN`                | `8081` / –            | Private admin dashboard port (empty or `0` disables) and optional token   |
 | `CORS_ORIGINS` / `CSP_CONNECT_SRC`          | –                     | Only needed when the frontend and API are hosted on different origins     |
 | `LEGAL_OPERATOR_*`, `LEGAL_*`, `LEGAL_DIR`  | –                     | Imprint and privacy pages, see [legal/README.md](legal/README.md)         |
@@ -80,7 +88,7 @@ Advanced options (`SERVE_FRONTEND`, `FRONTEND_DIR`, `API_DOCS`, `HSTS`, `USER_AG
 
 ## How it works
 
-CVE Desk uses a pull model. Nothing is pushed to your browser.
+Is It Fixed uses a pull model. Nothing is pushed to your browser.
 
 1. **Your browser** stores cases, selections, settings and an anonymous random workspace ID in local storage. When you
    open a case, it asks the server for that CVE and the selected vendor families.
@@ -108,13 +116,17 @@ Details on evidence semantics, source failures and the API: [docs/evidence.md](d
   anonymous workspace ID.
 - The server stores only CVE IDs and selected vendor families per anonymous workspace ID, plus cached public vendor
   data. No names, accounts or e-mail addresses.
-- Workspaces expire after 30 days of inactivity; unwatched cache data after 10 days; logs after at most 14 days.
-- IP addresses are never stored or logged by the application. Rate limiting uses an HMAC of the client IP with an
-  in-memory key that rotates daily and is never written to disk.
+- Workspaces expire after 30 days of inactivity; unwatched cache data after 10 days; logs after at most 14 days. The
+  app deletes its own log files itself (a daily task, also on idle days). Container-runtime and reverse-proxy logs are
+  the operator's responsibility; Docker's log drivers rotate by size only, so public instances should use journald
+  with a 14-day limit (see [docs/deployment.md](docs/deployment.md)).
+- IP addresses are never stored or logged by the application. Rate limiting counts requests per shortened client
+  address (IPv4 /24, IPv6 /48), computed per request; the counters live in memory only and expire with their rate-limit
+  window. The full address is not kept beyond the request.
 - Outbound requests go only to fixed official vendor URLs, never to URLs supplied by users.
 
 Operators publish their own imprint and privacy policy; German templates with English translations are in
-[legal/](legal/README.md).
+[legal/](legal/README.md). When configured, both pages are linked in the footer and in the first-visit dialog.
 
 ## Sources and licenses
 
@@ -131,13 +143,13 @@ Operators publish their own imprint and privacy policy; German templates with En
 [tm-feed]: https://s3.amazonaws.com/help-deepsecurity-trendmicro/Resources/CustomScripts/download-center/data/ds-dlc-feed-src/en-us/products_lts.json
 [tm-ksp]: https://files.trendmicro.com/documentation/guides/deep_security/Kernel%20Support/20.0/Deep_Security_20_0_kernels_EN.html
 
-CVE Desk normalizes and caches these documents; it does not redistribute them in bulk. Vendor names and logos are
+Is It Fixed normalizes and caches these documents; it does not redistribute them in bulk. Vendor names and logos are
 trademarks of their owners and are used only to identify the vendor's data (see [docs/trademarks.md](docs/trademarks.md),
 [logo attribution](assets/logos/README.md) and [fixture attribution](tests/fixtures/README.md)).
 
 ## TMDS Agent and Kernel Support Package matching
 
-Deep Security Agent on Linux needs kernel-specific modules. CVE Desk tracks two official Trend Micro sources hourly:
+Deep Security Agent on Linux needs kernel-specific modules. Is It Fixed tracks two official Trend Micro sources hourly:
 
 - **Bundled agent kernels:** the latest LTS 20 agent package per supported OS and architecture is downloaded from the
   download center, its published SHA-256 checksum is verified, and the list of bundled `Plugin-VFS_Filter_<kernel>`
@@ -160,7 +172,6 @@ tests and the build. Both package managers only resolve releases that are at lea
 uv sync                              # Python runtime and dev dependencies (.venv)
 pnpm install                         # prettier, eslint, esbuild
 uv run pre-commit install            # run all checks on every commit
-git config blame.ignoreRevsFile .git-blame-ignore-revs
 
 uv run pytest                        # backend tests
 pnpm test                            # frontend tests (node --test)

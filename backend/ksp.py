@@ -245,13 +245,18 @@ def parse(html):
 
 
 class KernelSupport(HourlyJob):
-    """Stores the current KSP per product/architecture and every listed kernel with the KSP it first appeared in.
+    """Stores the current KSP per product/architecture and the kernels listed on the latest page snapshot.
 
-    ``since`` is the KSP release that was current when this server first saw a kernel listed, or null when the
-    kernel was already listed the first time this server observed that product/architecture.
+    The API lists exactly the platforms and kernels of the last successfully parsed page, with their current Δ flag:
+    a kernel removed from the page disappears at the next successful fetch. ``since`` is the KSP release in which
+    this server first saw the kernel listed with full support (for a kernel that is currently Δ-only: the release
+    in which it was first listed at all). It is null when the kernel was already listed that way the first time this
+    server observed its product/architecture ("this KSP or earlier"). Rows of withdrawn kernels are kept for ten
+    days, only so that ``since`` stays correct if they return.
     """
 
     name = "tmds-ksp"
+    step_deadline = PAGE_DEADLINE + 60  # download plus parsing
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -265,25 +270,32 @@ class KernelSupport(HourlyJob):
     def store(self, page, now):
         db = self.cache.db
         with db:
+            db.execute("UPDATE ksp_platforms SET listed = 0")
+            db.execute("UPDATE ksp_kernels SET listed = 0")
             for (product, arch), platform in sorted(page.platforms.items()):
                 known = db.execute("SELECT 1 FROM ksp_platforms WHERE product=? AND arch=?", (product, arch)).fetchone()
                 package = json.dumps(platform.package) if platform.package else None
                 db.execute(
-                    "INSERT INTO ksp_platforms VALUES (?, ?, ?, ?, ?) ON CONFLICT(product, arch) DO UPDATE SET"
-                    " package=COALESCE(excluded.package, package), last_seen=excluded.last_seen",
+                    "INSERT INTO ksp_platforms (product, arch, package, first_seen, last_seen, listed)"
+                    " VALUES (?, ?, ?, ?, ?, 1) ON CONFLICT(product, arch) DO UPDATE SET"
+                    " package=COALESCE(excluded.package, package), last_seen=excluded.last_seen, listed=1",
                     (product, arch, package, now, now),
                 )
                 current = db.execute(
                     "SELECT package FROM ksp_platforms WHERE product=? AND arch=?", (product, arch)
                 ).fetchone()[0]
-                since = json.loads(current)["release"] if known and current else None
+                # Kernels listed on the first observation of a platform may be older than any KSP we know of.
+                release = json.loads(current)["release"] if known and current else None
                 db.executemany(
-                    "INSERT INTO ksp_kernels VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                    "INSERT INTO ksp_kernels (product, arch, kernel, flavor, since, first_seen, last_seen, partial,"
+                    " listed, full_seen, full_since) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)"
                     " ON CONFLICT(product, arch, kernel, flavor) DO UPDATE SET"
-                    " last_seen=excluded.last_seen, partial=excluded.partial",
+                    " last_seen=excluded.last_seen, partial=excluded.partial, listed=1,"
+                    " full_since=CASE WHEN full_seen THEN full_since ELSE excluded.full_since END,"
+                    " full_seen=MAX(full_seen, excluded.full_seen)",
                     [
-                        (product, arch, kernel, flavor, since, now, now, int(partial))
-                        for kernel, flavor, partial in platform.kernels
+                        (product, arch, kernel, flavor, release, now, now, int(partial), int(not partial), release)
+                        for kernel, flavor, partial in dict.fromkeys(platform.kernels)
                     ],
                 )
         self.extra = {"pageUpdated": page.updated, "notes": page.notes}
@@ -306,7 +318,8 @@ class KernelSupport(HourlyJob):
         products = {}
         entries = {}
         for row in db.execute(
-            "SELECT product, arch, package FROM ksp_platforms WHERE last_seen > ? ORDER BY product, arch", (cutoff,)
+            "SELECT product, arch, package FROM ksp_platforms WHERE listed AND last_seen > ? ORDER BY product, arch",
+            (cutoff,),
         ):
             package = json.loads(row["package"]) if row["package"] else {}
             entry = {
@@ -318,12 +331,14 @@ class KernelSupport(HourlyJob):
             entries[(row["product"], row["arch"])] = entry
             products.setdefault(row["product"], []).append(entry)
         for row in db.execute(
-            "SELECT product, arch, kernel, flavor, since, partial FROM ksp_kernels WHERE last_seen > ?"
-            " ORDER BY product, arch, first_seen, rowid",
+            "SELECT product, arch, kernel, flavor, since, full_since, partial FROM ksp_kernels"
+            " WHERE listed AND last_seen > ? ORDER BY product, arch, first_seen, rowid",
             (cutoff,),
         ):
             if entry := entries.get((row["product"], row["arch"])):
-                entry["kernels"].append([row["kernel"], row["flavor"], row["since"], bool(row["partial"])])
+                partial = bool(row["partial"])
+                since = row["since"] if partial else row["full_since"]
+                entry["kernels"].append([row["kernel"], row["flavor"], since, partial])
         self._snapshot, self._built = products, minute
         return products
 
@@ -340,6 +355,8 @@ class KernelSupport(HourlyJob):
         one = self.cache.db.execute
         cutoff = self.clock() - RETENTION
         return {
-            "platforms": one("SELECT COUNT(*) FROM ksp_platforms WHERE last_seen > ?", (cutoff,)).fetchone()[0],
-            "kernels": one("SELECT COUNT(*) FROM ksp_kernels WHERE last_seen > ?", (cutoff,)).fetchone()[0],
+            "platforms": one("SELECT COUNT(*) FROM ksp_platforms WHERE listed AND last_seen > ?", (cutoff,)).fetchone()[
+                0
+            ],
+            "kernels": one("SELECT COUNT(*) FROM ksp_kernels WHERE listed AND last_seen > ?", (cutoff,)).fetchone()[0],
         }

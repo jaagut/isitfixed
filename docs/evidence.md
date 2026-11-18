@@ -1,6 +1,6 @@
 # Evidence, caching and source semantics
 
-This page explains how CVE Desk turns vendor documents into the statuses shown in a case, and how the server caches and
+This page explains how Is It Fixed turns vendor documents into the statuses shown in a case, and how the server caches and
 refreshes them. It is the reference for "why does this row say X".
 
 ## Statuses

@@ -2,7 +2,7 @@
 services:
   app:
     build: .
-    image: cve-desk:local
+    image: isitfixed:local
     restart: unless-stopped
     ports:
       - "127.0.0.1:8080:8080" # public app
@@ -18,11 +18,11 @@ services:
       # TMDS_ENABLED: 'true'             # Trend Micro Deep Security inventories
       # ADMIN_PORT: '8081'               # empty or 0 disables the admin dashboard
       # ADMIN_TOKEN: ''                  # require Bearer/Basic auth on the admin dashboard (prefer .env)
-      # SITE_URL: 'https://cve.example.com'
-      # SOURCE_URL: 'https://github.com/jaagut/cve-viewer'
+      # SITE_URL: 'https://isitfixed.app'
+      # SOURCE_URL: 'https://github.com/jaagut/isitfixed'
       # LEGAL_OPERATOR_NAME: 'Jane Doe'
       # LEGAL_OPERATOR_ADDRESS: 'Example Street 1\n12345 Example Town\nGermany'
-      # LEGAL_OPERATOR_EMAIL: 'cve-desk@example.com'
+      # LEGAL_OPERATOR_EMAIL: 'isitfixed@example.com'
       # LEGAL_OPERATOR_PHONE: ''
       # LEGAL_RESPONSIBLE_PERSON: ''
       # LEGAL_HOSTING_PROVIDER: 'Example Hosting GmbH, Example Street 2, 12345 Example Town'
@@ -31,12 +31,12 @@ services:
       # HSTS: 'false'                    # normally set by the TLS reverse proxy
       # CSP_CONNECT_SRC: ''              # extra API origins when the frontend is hosted elsewhere
       # CORS_ORIGINS: ''
-      # RATE_LIMIT_REQUESTS: '240'       # all /api requests per client and minute
-      # RATE_LIMIT_LOOKUPS: '20'         # lookups that contact upstream sources, per client and minute
+      # RATE_LIMIT_REQUESTS: '300'       # all /api requests per client and minute
+      # RATE_LIMIT_LOOKUPS: '30'         # lookups that contact upstream sources, per client and minute
       # RATE_LIMIT_LOOKUPS_GLOBAL: '120' # the same, for all clients together
       # RATE_LIMIT_WATCHES: '12'         # watch-list syncs per client and minute
       # MAX_WATCHED_CVES: '1000'
-      # MAX_CACHED_CVES: '1000'
+      # MAX_CACHED_CVES: '1500'
       # MAX_WATCHES_PER_WORKSPACE: '200'
       # WORKSPACE_TTL_DAYS: '30'
       # LOG_LEVEL: 'INFO'
@@ -44,7 +44,7 @@ services:
       # LOG_DIR: /data/logs              # empty: no log files
       # API_DOCS: 'false'
     volumes:
-      - cve-desk-data:/data
+      - isitfixed-data:/data
       # Disk-backed scratch space for agent archive downloads (up to ~350 MB while one is inspected).
       - type: volume
         target: /tmp
@@ -74,5 +74,5 @@ services:
     stop_grace_period: 30s
 
 volumes:
-  cve-desk-data:
-    name: cve-desk-data
+  isitfixed-data:
+    name: isitfixed-data

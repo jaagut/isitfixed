@@ -48,30 +48,64 @@ function ubuntuKernel(release) {
 // version of that source package in the release. Kernels named after their
 // upstream version carry the release tag: 6.12.38+deb13-amd64 (trixie `linux`),
 // 6.12.90+deb12.1-cloud-amd64 (bookworm `linux-6.12`), 6.10.11+bpo-amd64
-// (backports, not covered by the release's tracker entry). Bookworm's main
-// `linux` uses ABI names (6.1.0-9-amd64) that do not reveal the package
-// version, so those kernels cannot be compared.
+// (backports, not covered by the release's tracker entry). trixie-backports
+// kernels also carry +deb13 (6.16.3+deb13-amd64), so a branch is the upstream
+// series (`linux 6.12`): a 6.16 kernel says nothing about a 6.12 fix. A respin of
+// the same upstream version (+deb13.1, +deb13+1) is a fourth build component.
+// Bookworm's main `linux` uses ABI names (6.1.0-9-amd64) that do not reveal the
+// package version, so those kernels cannot be compared.
+// Upstream series of each release's main `linux` source package.
+const DEBIAN_LINUX = { 12: [6, 1], 13: [6, 12] };
+// Fixed in a later Debian revision than the first upload of that upstream version:
+// listed kernels of the same upstream version may or may not include it.
+const LATER_REVISION = 1e9;
 function debianKernel(release) {
-  const m = release.match(/^(\d+)\.(\d+)\.(\d+)\+(?:deb(\d+)(?:[.+]\d+)?|(bpo))-(cloud-)?(?:amd64|arm64)$/);
+  const m = release.match(/^(\d+)\.(\d+)\.(\d+)\+(?:deb(\d+)(?:[.+](\d+))?|(bpo))-(cloud-)?(?:amd64|arm64)$/);
   if (!m) return null;
-  const pkg = m[5] ? 'bpo' : +m[4] >= 13 ? 'linux' : `linux-${m[1]}.${m[2]}`,
-    branch = `${pkg}${m[6] ? ' cloud' : ''}`;
-  return { branch, build: [+m[1], +m[2], +m[3]], label: release, series: branch };
+  const branch = `${m[6] ? 'bpo' : 'linux'} ${m[1]}.${m[2]}${m[7] ? ' cloud' : ''}`;
+  return {
+    branch,
+    build: [+m[1], +m[2], +m[3], +(m[5] || 0)],
+    label: release,
+    series: branch,
+    release: m[4] ? +m[4] : null,
+  };
 }
+
+// SUSE kernel flavours other than default (each its own kernel package and uname suffix).
+const SLES_FLAVORS = [
+  'azure',
+  'rt',
+  'preempt',
+  '64kb',
+  'zfcpdump',
+  'kvmsmall',
+  'debug',
+  'vanilla',
+  'coco',
+  'lpae',
+  'pae',
+];
+// RHEL variant kernels built from the same source (uname suffix +rt, +64k, +debug); kernel-core,
+// -modules, -devel, -tools… belong to the standard kernel.
+const RHEL_VARIANTS = ['rt', '64k', 'debug', 'zfcpdump'];
+const rhelBranch = (stream, variant) => `el${stream}${variant ? ` ${variant}` : ''}`;
 
 const KERNELS = {
   rhel: {
     // kernel-5.14.0-427.13.1.el9_4 runs as 5.14.0-427.13.1.el9_4.x86_64; EUS streams (el9_4) stay separate.
+    // kernel-rt-…, kernel-64k-… and kernel-debug-… are variants that only kernels of that variant support.
     fix(f) {
-      const m = f.match(/^kernel(?:-[a-z][a-z0-9_]*)*-(\d+\.\d+\.\d+)-(\d+(?:\.\d+)*)\.el(\d+)(_\d+)?$/);
-      return (
-        m && {
-          branch: `el${m[3]}${m[4] || ''}`,
-          build: nums(`${m[1]}.${m[2]}`),
-          label: `${m[1]}-${m[2]}.el${m[3]}${m[4] || ''}`,
-          series: `el${m[3]}`,
-        }
-      );
+      const m = f.match(/^kernel((?:-\d*[a-z][a-z0-9_]*)*)-(\d+\.\d+\.\d+)-(\d+(?:\.\d+)*)\.el(\d+)(_\d+)?$/);
+      if (!m) return null;
+      const variant = m[1].split('-').find((s) => RHEL_VARIANTS.includes(s)) || '';
+      return {
+        branch: rhelBranch(`${m[4]}${m[5] || ''}`, variant),
+        build: nums(`${m[2]}.${m[3]}`),
+        label: `${m[2]}-${m[3]}.el${m[4]}${m[5] || ''}${variant ? `+${variant}` : ''}`,
+        optional: Boolean(variant),
+        series: rhelBranch(m[4], variant),
+      };
     },
     vfs(k) {
       const m = k.replace(ARCH, '').match(/^(\d+_\d+_\d+)_(\d+(?:_\d+)*)_el(\d+)(_\d+)?$/);
@@ -85,15 +119,17 @@ const KERNELS = {
       );
     },
     // Cloud kernels (….el9_2.cloud.0.3) are a separate flavour that RHEL kernel fixes do not cover.
+    // Variant kernels carry a suffix after the architecture: 5.14.0-427.13.1.el9_4.x86_64+rt.
     ksp(k) {
-      const m = k.replace(ARCH, '').match(/^(\d+\.\d+\.\d+)-(\d+(?:\.\d+)*)\.el(\d+)(_\d+)?(\.cloud(?:\.\d+)*)?$/);
-      if (!m) return null;
+      const [base, variant = ''] = k.split('+');
+      const m = base.replace(ARCH, '').match(/^(\d+\.\d+\.\d+)-(\d+(?:\.\d+)*)\.el(\d+)(_\d+)?(\.cloud(?:\.\d+)*)?$/);
+      if (!m || (variant && !RHEL_VARIANTS.includes(variant))) return null;
       const cloud = m[5] ? ' cloud' : '';
       return {
-        branch: `el${m[3]}${m[4] || ''}${cloud}`,
+        branch: `${rhelBranch(`${m[3]}${m[4] || ''}`, variant)}${cloud}`,
         build: nums(`${m[1]}.${m[2]}`),
         label: k,
-        series: `el${m[3]}${cloud}`,
+        series: `${rhelBranch(m[3], variant)}${cloud}`,
       };
     },
   },
@@ -105,8 +141,9 @@ const KERNELS = {
       const parts = nums(m[4]);
       // kernel-default-base carries a second release (….55.44.1.150500.6.19.5); its kernel build matches kernel-default.
       if (parts.length > 3) return null;
-      // kernel-azure, kernel-devel-azure and kernel-source-rt belong to their flavour; the rest to default.
-      const flavor = m[1].split('-').find((s) => ['azure', 'rt'].includes(s)) || 'default',
+      // kernel-azure, kernel-devel-azure, kernel-preempt and kernel-source-rt belong to their flavour (a
+      // separate kernel that only kernels of that flavour can support); kernel-source, -syms, -docs to default.
+      const flavor = m[1].split('-').find((s) => SLES_FLAVORS.includes(s)) || 'default',
         build = parts.slice(0, -1);
       return {
         branch: `${m[2]}-${m[3]} ${flavor}`,
@@ -118,7 +155,7 @@ const KERNELS = {
       };
     },
     vfs(k) {
-      const m = k.replace(ARCH, '').match(/^(\d+_\d+_\d+)_(\d{6})_(\d+(?:_\d+)*)_([a-z][a-z0-9]*)$/);
+      const m = k.replace(ARCH, '').match(/^(\d+_\d+_\d+)_(\d{6})_(\d+(?:_\d+)*)_(\d*[a-z][a-z0-9]*)$/);
       return (
         m && {
           branch: `${dots(m[1])}-${m[2]} ${m[4]}`,
@@ -131,7 +168,7 @@ const KERNELS = {
     },
     // 6.4.0-150700.53.31-default; SLES 15 GA names without a 6-digit release (4.12.14-25.13-default) are skipped.
     ksp(k) {
-      const m = k.match(/^(\d+\.\d+\.\d+)-(\d{6})\.(\d+(?:\.\d+)*)-([a-z][a-z0-9]*)$/);
+      const m = k.match(/^(\d+\.\d+\.\d+)-(\d{6})\.(\d+(?:\.\d+)*)-(\d*[a-z][a-z0-9]*)$/);
       return (
         m && {
           branch: `${m[1]}-${m[2]} ${m[4]}`,
@@ -165,12 +202,30 @@ const KERNELS = {
     ksp: ubuntuKernel,
   },
   debian: {
-    // linux 6.12.113-1 (or linux-6.12 6.12.113-1~deb12u1): branch is the source package.
+    // linux 6.12.113-1 (or linux-6.12 6.12.113-1~deb12u1): branch is the upstream series of the source package.
     fix(f) {
-      const m = f.match(/^(linux(?:-\d+\.\d+)?) (\d+)\.(\d+)\.(\d+)-/);
-      return (
-        m && { branch: m[1], build: [+m[2], +m[3], +m[4]], label: `${m[1]} ${m[2]}.${m[3]}.${m[4]}`, series: m[1] }
-      );
+      const m = f.match(/^(linux(?:-\d+\.\d+)?) (\d+)\.(\d+)\.(\d+)-(\d[\w.+~]*)/);
+      if (!m) return null;
+      const branch = `linux ${m[2]}.${m[3]}`,
+        later = !/^1(?:~deb\d+u1)?$/.test(m[5]);
+      return {
+        branch,
+        build: [+m[2], +m[3], +m[4], later ? LATER_REVISION : 0],
+        label: `${m[1]} ${m[2]}.${m[3]}.${m[4]}-${m[5]}`,
+        series: branch,
+        pkg: m[1],
+        upstream: 3,
+        later,
+      };
+    },
+    // A `linux` fix from before the release (linux 6.6.15-1 for trixie) covers every
+    // kernel of the release's main series; the release tag of the listed kernels tells which.
+    adjust(fix, kernels) {
+      const tags = new Set(kernels.map((k) => k.release).filter(Boolean)),
+        main = tags.size === 1 ? DEBIAN_LINUX[[...tags][0]] : null;
+      if (fix.pkg !== 'linux' || !main || compareBuild(fix.build.slice(0, 2), main) >= 0) return fix;
+      const branch = `linux ${main.join('.')}`;
+      return { ...fix, branch, series: branch, build: [0], later: false };
     },
     // 6_12_113+deb13_cloud_amd64 → 6.12.113+deb13-cloud-amd64; ABI names (6_1_0_44_amd64) stay unparsed.
     vfs: (k) => debianKernel(k.replace(/_(?=\d)/g, '.').replace(/_/g, '-')),
@@ -192,7 +247,12 @@ function candidates(fix, parsed) {
     .at(-1);
   // Only a stream newer than everything listed is "not yet"; an older, unlisted stream stays unknown.
   const newest = same.at(-1) || (series && byRank(fix, series) > 0 ? series : undefined);
-  return { ok: same.filter((k) => compareBuild(k.build, fix.build) >= 0), newest };
+  const ok = same.filter((k) => compareBuild(k.build, fix.build) >= 0);
+  // Fixed in a later package revision of an upstream version that is listed: no way to tell.
+  const upstream = (k) => k.build.slice(0, fix.upstream);
+  const unsure =
+    fix.later && !ok.length ? same.filter((k) => compareBuild(upstream(k), upstream(fix)) === 0).at(-1) : undefined;
+  return { ok, newest, unsure };
 }
 
 // Bundled agent: the earliest agent release (of this architecture) that bundles
@@ -215,6 +275,8 @@ function agentCell(fix, releases) {
       exact: compareBuild(best.kernel.build, fix.build) === 0,
     };
   const latest = releases.reduce((a, b) => (compareRelease(b.release, a.release) > 0 ? b : a));
+  const unsure = releases.map((r) => candidates(fix, r.parsed).unsure).find(Boolean);
+  if (unsure) return { status: 'unknown', release: latest, kernel: unsure.label, revision: true };
   if (newest) return { status: 'pending', release: latest, kernel: newest.kernel.label };
   return { status: 'unknown', release: latest };
 }
@@ -240,6 +302,7 @@ function kspCell(fix, entry) {
       since: known ? since.sort(compareRelease)[0] : null,
     };
   }
+  if (c.unsure) return { status: 'unknown', entry, kernel: c.unsure.label, revision: true };
   if (c.newest) return { status: 'pending', entry, kernel: c.newest.label };
   return { status: 'unknown', entry };
 }
@@ -275,12 +338,10 @@ export function kernelSupport(family, fixes, { releases = [], ksp = [] } = {}) {
   const parser = KERNELS[family];
   const empty = { status: 'unknown', branches: [], arches: [], agent: { status: 'nodata' }, ksp: { status: 'nodata' } };
   if (!parser) return empty;
-  const wanted = new Map();
-  for (const f of fixes) {
-    const k = parser.fix(f);
-    if (k && (!wanted.has(k.branch) || compareBuild(k.build, wanted.get(k.branch).build) < 0)) wanted.set(k.branch, k);
-  }
-  const agents = releases.map((r) => ({ ...r, parsed: (r.kernels || []).map(parser.vfs).filter(Boolean) }));
+  const agents = releases.map((r) => ({
+    ...r,
+    parsed: (r.kernels || []).map((k) => parser.vfs(String(k))).filter(Boolean),
+  }));
   const packages = ksp.map((e) => ({
     ...e,
     parsed: (e.kernels || [])
@@ -290,6 +351,13 @@ export function kernelSupport(family, fixes, { releases = [], ksp = [] } = {}) {
       })
       .filter(Boolean),
   }));
+  const listed = [...agents, ...packages].flatMap((x) => x.parsed);
+  const wanted = new Map();
+  for (const f of fixes) {
+    let k = parser.fix(f);
+    if (k && parser.adjust) k = parser.adjust(k, listed);
+    if (k && (!wanted.has(k.branch) || compareBuild(k.build, wanted.get(k.branch).build) < 0)) wanted.set(k.branch, k);
+  }
   const arches = [...new Set([...agents, ...packages].map((x) => x.architecture))].sort(
     (a, b) => (ARCH_ORDER.indexOf(a) + 1 || 99) - (ARCH_ORDER.indexOf(b) + 1 || 99),
   );
@@ -309,6 +377,7 @@ export function kernelSupport(family, fixes, { releases = [], ksp = [] } = {}) {
     const main = cells.filter((c) => primary.includes(c.arch));
     return {
       fix: fix.label,
+      branch: fix.branch,
       optional: Boolean(fix.optional),
       cells,
       agent: combineStatus(main.map((c) => c.agent.status)),

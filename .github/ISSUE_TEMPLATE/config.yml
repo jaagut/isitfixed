@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Report a security vulnerability
-    url: https://github.com/jaagut/cve-viewer/security/advisories/new
+    url: https://github.com/jaagut/isitfixed/security/advisories/new
     about: Please report security problems privately, not in a public issue. See SECURITY.md.
   - name: Wrong data from a vendor
-    url: https://github.com/jaagut/cve-viewer/blob/main/docs/evidence.md
-    about: Check how CVE Desk reads each vendor source first. If the vendor's own data is wrong, contact the vendor.
+    url: https://github.com/jaagut/isitfixed/blob/main/docs/evidence.md
+    about: Check how Is It Fixed reads each vendor source first. If the vendor's own data is wrong, contact the vendor.

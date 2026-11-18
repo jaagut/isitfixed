@@ -3,7 +3,7 @@
 // restoring a backup replaces the state object.
 import { CVSS_VERSIONS } from './data.js';
 import { validTheme } from './cases.js';
-import { validateState } from './state.js';
+import { validateState, MAX_OPEN_CASES } from './state.js';
 import { choices, orderedVendors } from './render/case.js';
 
 const $ = (s) => document.querySelector(s);
@@ -115,7 +115,7 @@ export function setupSettings(app) {
     const url = URL.createObjectURL(new Blob([JSON.stringify(app.getState(), null, 2)], { type: 'application/json' }));
     const a = document.createElement('a');
     a.href = url;
-    a.download = `cve-desk-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `isitfixed-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
@@ -124,8 +124,15 @@ export function setupSettings(app) {
       const f = e.target.files[0];
       if (!f) return;
       if (f.size > 30000000) throw Error('Backup exceeds 30 MB.');
-      const next = validateState(JSON.parse(await f.text()));
-      if (!confirm(`Replace this workspace with ${next.cases.length} backed-up cases?`)) return;
+      const report = {},
+        next = validateState(JSON.parse(await f.text()), report);
+      const notes = [
+        report.droppedCases ? `${report.droppedCases} damaged cases will be skipped.` : '',
+        report.archivedCases
+          ? `${report.archivedCases} cases will be archived: at most ${MAX_OPEN_CASES} can be open.`
+          : '',
+      ].filter(Boolean);
+      if (!confirm([`Replace this workspace with ${next.cases.length} backed-up cases?`, ...notes].join(' '))) return;
       app.restore(next);
       dialog.close();
     } catch (err) {

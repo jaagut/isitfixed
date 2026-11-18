@@ -135,3 +135,63 @@ test('TMDS fact with KSP and agent details; everything TMDS disappears when off'
   assert.doesNotMatch(renderHome(ctx({ tmdsOn: false }), null), /Deep Security/);
   assert.match(renderHome(ctx(), null), /Trend Micro Deep Security/);
 });
+
+test('hostile or odd vendor data cannot break the case page', () => {
+  const odd = structuredClone(c);
+  odd.vendorData.evidence.rhel9[0].links = ['https://access.redhat.com/errata/RHSA-%E0%A4%A', 'https://x.test/a%2Fb'];
+  odd.vendorData.sources.rhel.excludedImages = '"><img src=x onerror=alert(1)>';
+  const html = renderCase(odd, ctx());
+  assert.match(html, />RHSA-%E0%A4%A ↗</, 'malformed percent-encoding is shown as published');
+  assert.match(html, />a\/b ↗</);
+  assert.doesNotMatch(html, /<img src=x|onerror=/);
+  odd.vendorData.sources.rhel.excludedImages = 3;
+  assert.match(renderCase(odd, ctx()), /3 public-cloud image entries not counted/);
+});
+
+test('TMDS: no line for families without kernel matching; Debian respins are not verifiable', () => {
+  const alpine = {
+    ...structuredClone(c),
+    products: ['alpine322'],
+    vendorData: {
+      id: ID,
+      evidence: { alpine322: [{ name: 'linux-lts', status: 'fixed', fix: ['linux-lts 6.12.1-r0'], source: 'Alpine' }] },
+      sources: { alpine: { checked: NOW } },
+    },
+  };
+  assert.doesNotMatch(renderCase(alpine, ctx()), /fact-label">TMDS/);
+  assert.doesNotMatch(renderCase(alpine, ctx({ inventory: { data: null, error: null } })), /Checking inventory/);
+  const debian = {
+    ...structuredClone(c),
+    products: ['debian13'],
+    vendorData: {
+      id: ID,
+      evidence: { debian13: [{ name: 'linux', status: 'fixed', fix: ['linux 6.12.90-2'], source: 'Debian' }] },
+      sources: { debian: { checked: NOW } },
+    },
+  };
+  const data = {
+    checked: NOW,
+    products: {},
+    ksp: {
+      checked: NOW,
+      products: {
+        debian13: [
+          {
+            architecture: 'x86_64',
+            release: '20.0.3-36500',
+            kernels: [['6.12.90+deb13-amd64', 'default', null, false]],
+          },
+        ],
+      },
+    },
+  };
+  const html = renderCase(debian, ctx({ inventory: { data, error: null } }));
+  assert.match(html, /KSP unverified/);
+  assert.match(html, /Lists <code>6\.12\.90\+deb13-amd64<\/code> of the same upstream version/);
+});
+
+test('home: every visitor sees what Is It Fixed is for', () => {
+  const tagline = /Check whether a vulnerability is fixed for the OS versions you run/;
+  assert.match(renderHome(ctx({ state: defaultState() }), null), tagline);
+  assert.match(renderHome(ctx(), null), tagline);
+});

@@ -7,13 +7,6 @@ from starlette.responses import JSONResponse
 PERMISSIONS_POLICY = (
     "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=(), browsing-topics=()"
 )
-# Swagger UI and ReDoc (only when API_DOCS=true) load their bundles from jsDelivr and use inline bootstrap code.
-DOCS_CSP = (
-    "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: https://fastapi.tiangolo.com; "
-    "worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
-)
-DOCS_PATHS = ("/docs", "/redoc")
 
 
 def content_security_policy(connect_src=(), https=False):
@@ -40,20 +33,14 @@ def content_security_policy(connect_src=(), https=False):
 class SecurityHeaders:
     """Adds security headers to every response (pure ASGI, so streaming responses are not buffered)."""
 
-    def __init__(self, app, connect_src=(), hsts=False, docs=False):
-        self.app, self.connect_src, self.hsts, self.docs = app, tuple(connect_src), hsts, docs
+    def __init__(self, app, connect_src=(), hsts=False):
+        self.app, self.connect_src, self.hsts = app, tuple(connect_src), hsts
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        https = scope.get("scheme") == "https"
-        path = scope.get("path", "")
-        csp = (
-            DOCS_CSP
-            if self.docs and path.startswith(DOCS_PATHS)
-            else content_security_policy(self.connect_src, https=https)
-        )
+        csp = content_security_policy(self.connect_src, https=scope.get("scheme") == "https")
 
         async def wrapped(message):
             if message["type"] == "http.response.start":
@@ -88,7 +75,12 @@ class SelectiveGZip:
 
 
 class BodyLimit:
-    """Rejects request bodies larger than ``limit`` bytes (declared or streamed) with 413."""
+    """Rejects request bodies larger than ``limit`` bytes with 413, whether declared or streamed (chunked).
+
+    A streamed body is counted while the app reads it. Once it exceeds the limit, the 413 response is sent at once,
+    the app sees a client disconnect, and anything the app tries to send afterwards (such as a 400 for the body it
+    could not read) is discarded.
+    """
 
     def __init__(self, app, limit):
         self.app, self.limit = app, limit
@@ -99,24 +91,38 @@ class BodyLimit:
             return
         declared = Headers(scope=scope).get("content-length", "")
         if declared.isdigit() and int(declared) > self.limit:
-            await JSONResponse({"detail": "Request body too large."}, status_code=413)(scope, receive, send)
+            await too_large(scope, receive, send)
             return
         received = 0
+        rejected = started = False
+
+        async def guarded_send(message):
+            nonlocal started
+            if rejected:
+                return
+            started = started or message["type"] == "http.response.start"
+            await send(message)
 
         async def limited():
-            nonlocal received
+            nonlocal received, rejected
+            if rejected:
+                return {"type": "http.disconnect"}
             message = await receive()
             if message["type"] == "http.request":
                 received += len(message.get("body", b""))
                 if received > self.limit:
-                    raise BodyTooLarge()
+                    rejected = True
+                    if not started:
+                        await too_large(scope, receive, send)
+                    return {"type": "http.disconnect"}
             return message
 
         try:
-            await self.app(scope, limited, send)
-        except BodyTooLarge:
-            await JSONResponse({"detail": "Request body too large."}, status_code=413)(scope, receive, send)
+            await self.app(scope, limited, guarded_send)
+        except Exception:
+            if not rejected:
+                raise
 
 
-class BodyTooLarge(Exception):  # noqa: N818 - control-flow signal
-    pass
+async def too_large(scope, receive, send):
+    await JSONResponse({"detail": "Request body too large."}, status_code=413)(scope, receive, send)

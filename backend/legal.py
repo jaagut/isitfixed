@@ -8,7 +8,7 @@ from pathlib import Path
 from .cache import RETENTION_DAYS
 from .settings import ROOT
 
-logger = logging.getLogger("cve-desk.legal")
+logger = logging.getLogger("isitfixed.legal")
 TEMPLATES = ROOT / "legal" / "templates"
 SHELL = ROOT / "legal" / "page.html"
 PAGES = {
@@ -98,7 +98,7 @@ class LegalPages:
         body = render(path.read_text(encoding="utf-8"), self.values)
         values = {
             **self.values,
-            "title": f"{PAGES[page]} – CVE Desk",
+            "title": f"{PAGES[page]} – Is It Fixed",
             "heading": PAGES[page],
             "stylesheet": self.stylesheet,
             "imprint_page": enabled["imprint"],

@@ -15,9 +15,9 @@ RUN pnpm run build
 
 # Runtime: FastAPI backend serving the built frontend.
 FROM python:3.13.18-slim@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90
-LABEL org.opencontainers.image.title="CVE Desk" \
+LABEL org.opencontainers.image.title="Is It Fixed" \
       org.opencontainers.image.description="A compact CVE case workspace with a FastAPI vendor-data cache" \
-      org.opencontainers.image.source="https://github.com/jaagut/cve-viewer" \
+      org.opencontainers.image.source="https://github.com/jaagut/isitfixed" \
       org.opencontainers.image.licenses="MIT"
 WORKDIR /app
 # Nothing is written outside /data and /tmp at runtime, so the root filesystem can be mounted read-only.
@@ -32,8 +32,8 @@ COPY backend backend
 COPY legal legal
 COPY --from=frontend /build/dist dist
 RUN python -m compileall -q backend \
-    && groupadd --gid 10001 cve-desk \
-    && useradd --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin cve-desk \
+    && groupadd --gid 10001 isitfixed \
+    && useradd --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin isitfixed \
     && mkdir -p /data && chown 10001:10001 /data
 ENV PATH=/opt/venv/bin:$PATH HOME=/tmp \
     HOST=0.0.0.0 PORT=8080 ADMIN_PORT=8081 \

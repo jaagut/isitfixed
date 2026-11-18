@@ -1,7 +1,11 @@
 name: Weekly image scan
 
-# Catches new vulnerabilities in the base image and dependencies between releases:
-# scans the published :main image and a fresh rebuild of main with the newest base image.
+# Catches vulnerabilities disclosed after an image was published:
+# - "latest": the current release image (what most operators run), resolved to its digest;
+# - "main": the image published from the main branch, resolved to its digest;
+# - "rebuilt": a fresh build of main without the build cache. The Dockerfile pins its base images by digest, so this
+#   rebuild uses the same bases as main; it shows what the next published build would contain and that it still
+#   builds. Newer base images arrive only through Dependabot's digest pull requests.
 on:
   schedule:
     - cron: "23 5 * * 1" # Mondays 05:23 UTC
@@ -15,7 +19,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGE: ghcr.io/jaagut/cve-viewer
+  IMAGE: ghcr.io/jaagut/isitfixed
   TRIVY_VERSION: "v0.76.2"
 
 jobs:
@@ -25,12 +29,12 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
-      packages: read # pull the published image, also while the package is private
+      packages: read # pull the published images, also while the package is private
       security-events: write # upload Trivy results to code scanning
     strategy:
       fail-fast: false
       matrix:
-        target: [published, rebuilt]
+        target: [latest, main, rebuilt]
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -38,57 +42,75 @@ jobs:
           persist-credentials: false
 
       - name: Log in to GitHub Container Registry
-        if: matrix.target == 'published'
+        if: matrix.target != 'rebuilt'
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pull published image
-        if: matrix.target == 'published'
+      - name: Pull published image by digest
+        id: pull
+        if: matrix.target != 'rebuilt'
+        env:
+          TAG: ${{ matrix.target }}
         run: |
-          docker pull "${IMAGE}:main"
-          docker tag "${IMAGE}:main" cve-desk:scan
+          if ! digest=$(docker buildx imagetools inspect "${IMAGE}:${TAG}" --format '{{.Manifest.Digest}}'); then
+            if [ "${TAG}" = "latest" ]; then
+              # Before the first stable release there is no :latest; that is not a failure.
+              echo "::notice::${IMAGE}:latest does not exist yet (no stable release); skipping."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "::error::Cannot resolve ${IMAGE}:${TAG}."
+            exit 1
+          fi
+          echo "Scanning ${IMAGE}:${TAG} = ${IMAGE}@${digest}"
+          echo "### ${IMAGE}:${TAG}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Digest: \`${digest}\`" >> "$GITHUB_STEP_SUMMARY"
+          docker pull "${IMAGE}@${digest}"
+          docker tag "${IMAGE}@${digest}" isitfixed:scan
+          echo "skip=false" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         if: matrix.target == 'rebuilt'
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      - name: Rebuild image with the newest base image
+      - name: Rebuild main without the build cache
         if: matrix.target == 'rebuilt'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           push: false
           load: true
-          pull: true
           no-cache: true
-          tags: cve-desk:scan
+          tags: isitfixed:scan
 
       - name: Scan image (SARIF report)
+        if: steps.pull.outputs.skip != 'true'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: ${{ env.TRIVY_VERSION }}
-          image-ref: cve-desk:scan
+          image-ref: isitfixed:scan
           format: sarif
           output: trivy-results.sarif
           ignore-unfixed: true
           exit-code: "0"
 
       - name: Upload scan results to code scanning
-        if: always() && hashFiles('trivy-results.sarif') != ''
+        if: always() && steps.pull.outputs.skip != 'true' && hashFiles('trivy-results.sarif') != ''
         uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           sarif_file: trivy-results.sarif
           category: trivy-${{ matrix.target }}
 
       - name: Fail on fixable critical or high vulnerabilities
+        if: steps.pull.outputs.skip != 'true'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: ${{ env.TRIVY_VERSION }}
           skip-setup-trivy: true
-          image-ref: cve-desk:scan
+          image-ref: isitfixed:scan
           format: table
           severity: CRITICAL,HIGH
           ignore-unfixed: true

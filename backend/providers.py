@@ -3,12 +3,16 @@
 import asyncio
 import json
 import re
+import sys
+import tempfile
 import time
+from pathlib import Path
 
 import httpx
 
-from .errors import NotPublished, describe
-from .fetch import MIB, read_limited
+from .errors import NotPublished, TooLarge, describe
+from .feedindex import alpine_index, debian_index
+from .fetch import MIB, Budget, download_to, read_limited
 
 __all__ = ["DEADLINES", "FAMILIES", "HOUR", "PRODUCTS", "NotPublished", "Providers", "describe"]
 
@@ -18,6 +22,17 @@ DEADLINES = {"record": 30, "rhel": 30, "sles": 30, "ubuntu": 30, "debian": 150, 
 # Overall limits for one shared download, independent of how long any requester waits for it.
 DOCUMENT_DEADLINE, BULK_DEADLINE = 30, 150
 DOCUMENT_LIMIT = 128 * MIB
+# Memory: per-CVE documents and Alpine feeds are buffered in memory and share one byte budget; at most a few documents
+# download at once. Bulk feeds are fetched one at a time; the Debian dump (~90 MB) is spooled to disk and indexed by a
+# child process (feedindex.py), and only compact per-CVE indexes are kept for up to an hour.
+IN_FLIGHT_LIMIT = 192 * MIB
+DOCUMENT_CONCURRENCY = 6
+DEBIAN_LIMIT = 512 * MIB  # on disk
+ALPINE_LIMIT = 32 * MIB
+INDEX_LIMIT = 64 * MIB  # compact Debian index returned by the child process
+INDEXER = Path(__file__).with_name("feedindex.py")
+DEBIAN_URL = "https://security-tracker.debian.org/tracker/data/json"
+ALPINE_URL = "https://secdb.alpinelinux.org/"
 # SUSE lists public-cloud container-host images alongside the OS. They are
 # separate products, so they are excluded from the SLES rows and counted instead.
 SUSE_IMAGE = re.compile(r"\bimages? for\b|\bCHOST\b", re.I)
@@ -185,18 +200,20 @@ def ubuntu(doc, cve):
     return result
 
 
-def debian(doc, cve):
+def debian_codes():
+    return [code for family, code in PRODUCTS.values() if family == "debian"]
+
+
+def debian_evidence(entries):
+    """Evidence per Debian product from the index entries ``[package, codename, status, fixed_version, nodsa]``."""
     result = {}
     for product, (family, code) in PRODUCTS.items():
         if family != "debian":
             continue
         items = []
-        for package, records in doc.items():
-            release = records.get(cve, {}).get("releases", {}).get(code)
-            if not release:
+        for package, codename, state, version, nodsa in entries:
+            if codename != code:
                 continue
-            version = release.get("fixed_version")
-            state = release.get("status")
             status = (
                 ("unaffected" if version == "0" else "fixed" if version else "unknown")
                 if state == "resolved"
@@ -205,62 +222,124 @@ def debian(doc, cve):
                 else "unknown"
             )
             item = evidence(package, status, "Debian security tracker")
-            item.update(
-                fix=[f"{package} {version}"] if version and version != "0" else [], note=release.get("nodsa", "")
-            )
+            item.update(fix=[f"{package} {version}"] if version and version != "0" else [], note=nodsa or "")
             items.append(item)
         result[product] = items
     return result
 
 
-def alpine(doc, cve):
+def debian(doc, cve):
+    """Evidence from a full Debian tracker document (the app itself uses the compact index)."""
+    return debian_evidence(debian_index(doc, debian_codes()).get(cve, []))
+
+
+def alpine_evidence(entries):
     items = []
-    for package in doc.get("packages", []):
-        pkg = package["pkg"]
-        for version, ids in pkg.get("secfixes", {}).items():
-            if any(cve in value.split() for value in ids):
-                item = evidence(pkg["name"], "fixed", "Alpine secdb")
-                item["fix"] = [f"{pkg['name']} {version}"]
-                items.append(item)
+    for name, version in entries:
+        item = evidence(name, "fixed", "Alpine secdb")
+        item["fix"] = [f"{name} {version}"]
+        items.append(item)
     return items
 
 
+def alpine(doc, cve):
+    return alpine_evidence(alpine_index(doc).get(cve, []))
+
+
+async def _read_capped(stream, limit):
+    data = bytearray()
+    while chunk := await stream.read(1 << 20):
+        data.extend(chunk)
+        if len(data) > limit:
+            raise TooLarge()
+    return bytes(data)
+
+
 class Providers:
-    def __init__(self, client: httpx.AsyncClient, clock=time.time):
-        self.client, self.clock = client, clock
-        self.raw, self.pending = {}, {}
+    def __init__(self, client: httpx.AsyncClient, clock=time.time, spool_dir=None):
+        self.client, self.clock, self.spool_dir = client, clock, spool_dir
+        self.feeds, self.pending = {}, {}  # url -> (compact index, fetched at); url -> shared download task
+        self.memory = Budget(IN_FLIGHT_LIMIT)
+        self.documents = asyncio.Semaphore(DOCUMENT_CONCURRENCY)
+        self.bulk = asyncio.Semaphore(1)
 
     def prune(self, clear=False):
-        self.raw = {url: item for url, item in self.raw.items() if not clear and self.clock() - item[1] < HOUR}
+        self.feeds = {url: item for url, item in self.feeds.items() if not clear and self.clock() - item[1] < HOUR}
 
-    async def get_json(self, url, shared=False):
-        self.prune()
-        if shared and url in self.raw:
-            return self.raw[url][0]
+    async def shared(self, url, work):
+        """Run ``work()`` once per URL for all concurrent requesters; a cancelled requester does not cancel it."""
         if url in self.pending:
             return await asyncio.shield(self.pending[url])
-
-        async def download():
-            # The deadline bounds the shared task itself, so a slow-drip server cannot keep it alive.
-            data = await read_limited(
-                self.client, url, limit=DOCUMENT_LIMIT, deadline=BULK_DEADLINE if shared else DOCUMENT_DEADLINE
-            )
-            doc = await asyncio.to_thread(json.loads, data)
-            if shared:
-                self.raw[url] = (doc, self.clock())
-            return doc
-
-        task = self.pending[url] = asyncio.create_task(download())
+        task = self.pending[url] = asyncio.create_task(work())
         # Mark the outcome as retrieved even when every requester has already given up.
         task.add_done_callback(lambda done: done.cancelled() or done.exception())
         try:
             return await asyncio.shield(task)
         finally:
-            # A cancelled requester must not cancel a shared vendor download.
             if task.done():
                 self.pending.pop(url, None)
             else:
                 task.add_done_callback(lambda _: self.pending.pop(url, None))
+
+    async def get_json(self, url):
+        """A per-CVE document; the deadline bounds the shared task itself, including waiting for admission."""
+
+        async def download():
+            async with asyncio.timeout(DOCUMENT_DEADLINE), self.documents:
+                with self.memory.hold() as take:
+                    data = await read_limited(self.client, url, limit=DOCUMENT_LIMIT, take=take)
+                    return await asyncio.to_thread(json.loads, data)
+
+        return await self.shared(url, download)
+
+    async def get_feed(self, url, kind):
+        """The compact index of a bulk feed (``kind`` "debian" or "alpine"), kept in memory for up to an hour."""
+        self.prune()
+        if url in self.feeds:
+            return self.feeds[url][0]
+
+        async def download():
+            async with asyncio.timeout(BULK_DEADLINE), self.bulk:
+                index = await (self._debian_index(url) if kind == "debian" else self._alpine_index(url))
+            self.feeds[url] = (index, self.clock())
+            return index
+
+        return await self.shared(url, download)
+
+    async def _alpine_index(self, url):
+        with self.memory.hold() as take:
+            data = await read_limited(self.client, url, limit=ALPINE_LIMIT, take=take)
+            return await asyncio.to_thread(lambda: alpine_index(json.loads(data)))
+
+    async def _debian_index(self, url):
+        with tempfile.NamedTemporaryFile(prefix="isitfixed-feed-", suffix=".json", dir=self.spool_dir) as spool:
+            await download_to(self.client, url, spool, limit=DEBIAN_LIMIT)
+            process = await asyncio.create_subprocess_exec(
+                sys.executable,
+                "-I",
+                "-S",
+                str(INDEXER),
+                "debian",
+                spool.name,
+                *debian_codes(),
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            try:
+                output = await _read_capped(process.stdout, INDEX_LIMIT)
+                if await process.wait() != 0:
+                    raise ValueError("Debian tracker data could not be indexed")
+            finally:
+                if process.returncode is None:
+                    process.kill()
+                # Drain the PIPE after killing: wait() alone can deadlock on buffered stdout.
+                await process.communicate()
+        index = {}
+        for line in output.splitlines():
+            cve, _, entries = line.partition(b"\t")
+            index[cve.decode()] = entries
+        return index
 
     async def get_document(self, url, missing):
         try:
@@ -301,17 +380,18 @@ class Providers:
                 await self.get_document(url, "Ubuntu has not published a tracker entry for this CVE yet."), cve
             )
         elif family == "debian":
-            url = "https://security-tracker.debian.org/tracker/data/json"
-            result = debian(await self.get_json(url, shared=True), cve)
+            url = DEBIAN_URL
+            entries = (await self.get_feed(url, "debian")).get(cve)
+            result = debian_evidence(json.loads(entries) if entries else [])
         elif family == "alpine":
-            url, result = "https://secdb.alpinelinux.org/", {}
+            url, result = ALPINE_URL, {}
             for product, (group, version) in PRODUCTS.items():
                 if group != "alpine":
                     continue
-                docs = await asyncio.gather(
-                    *(self.get_json(f"{url}v{version}/{repo}.json", shared=True) for repo in ("main", "community"))
+                indexes = await asyncio.gather(
+                    *(self.get_feed(f"{url}v{version}/{repo}.json", "alpine") for repo in ("main", "community"))
                 )
-                result[product] = [item for doc in docs for item in alpine(doc, cve)]
+                result[product] = [item for index in indexes for item in alpine_evidence(index.get(cve, []))]
         else:
             raise ValueError("Unsupported vendor")
         return result, dict(url=url, checked=int(self.clock() * 1000), mode="API cache", **metadata)

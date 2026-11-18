@@ -7,11 +7,15 @@
     <meta name="referrer" content="no-referrer" />
     <title>{{title}}</title>
     <link rel="icon" href="/assets/icon.svg" type="image/svg+xml" />
+    <!-- Applies the appearance chosen in Is It Fixed (light/dark) before the first paint. -->
+    <!-- if:theme_script -->
+    <script src="{{theme_script}}"></script>
+    <!-- endif:theme_script -->
     <link rel="stylesheet" href="{{stylesheet}}" />
   </head>
   <body class="legal-page">
     <header class="legal-header">
-      <a class="brand" href="/"><span class="brand-icon">c/</span> CVE Desk</a>
+      <a class="brand" href="/"><span class="brand-icon">?/</span> Is It Fixed</a>
     </header>
     <main class="legal-content">
       <h1>{{heading}}</h1>
@@ -19,16 +23,27 @@
     </main>
     <footer class="site-footer">
       <p>
-        CVE Desk is an informational tool. Data comes from public vendor sources and may be incomplete, delayed or
+        Is It Fixed is an informational tool. Data comes from public vendor sources and may be incomplete, delayed or
         wrong. No warranty — use at your own discretion and verify with the vendor before acting. Not affiliated with or
         endorsed by Red Hat, SUSE, Canonical, Debian, Alpine, Microsoft or Trend Micro.
       </p>
       <nav aria-label="Legal">
-        <!-- if:imprint_page --><a href="/imprint">Imprint</a> ·
-        <!-- endif:imprint_page -->
-        <!-- if:privacy_page --><a href="/privacy">Privacy</a> ·
-        <!-- endif:privacy_page -->
-        <a href="{{source_url}}" rel="noopener">Source code</a>
+        <ul class="footer-links">
+          <li><a href="/">Is It Fixed</a></li>
+          <!-- if:imprint_page -->
+          <li><a href="/imprint">Imprint</a></li>
+          <!-- endif:imprint_page -->
+          <!-- if:privacy_page -->
+          <li><a href="/privacy">Privacy</a></li>
+          <!-- endif:privacy_page -->
+          <!-- if:source_url -->
+          <li>
+            <a class="source-link" href="{{source_url}}" rel="noopener noreferrer" aria-label="Source code on GitHub"
+              ><span class="github-icon" aria-hidden="true"></span>Source code</a
+            >
+          </li>
+          <!-- endif:source_url -->
+        </ul>
       </nav>
     </footer>
   </body>

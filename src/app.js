@@ -1,11 +1,19 @@
-// CVE Desk app: state, routing, refreshes, notifications and event wiring.
+// Is It Fixed app: state, routing, refreshes, notifications and event wiring.
 // Rendering lives in src/render/*; matching and change detection are pure
 // modules (tmds.js, changes.js, rows.js, sources.js).
 import { hasCaseUpdate, recordUpdate, markCaseRead, sortedCases } from './cases.js';
 import { streamCase, syncWatches, fetchAgents, fetchConfig, DEFAULT_CONFIG } from './api.js';
 import { validId, extractCveIds } from './data.js';
 import { caseActionState, diffActions, withoutTmds, describeChanges } from './changes.js';
-import { STORAGE_KEY, DISCLAIMER_VERSION, loadState } from './state.js';
+import {
+  STORAGE_KEY,
+  THEME_KEY,
+  DISCLAIMER_VERSION,
+  MAX_OPEN_CASES,
+  MAX_CASES,
+  loadWorkspace,
+  saveable,
+} from './state.js';
 import { esc, icons, HOUR } from './util.js';
 import {
   selected,
@@ -24,7 +32,10 @@ import { setupSettings } from './settings.js';
 const $ = (s) => document.querySelector(s);
 const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-let state = loadState(localStorage),
+const loaded = loadWorkspace(localStorage);
+let state = loaded.state,
+  // The saved workspace could not be read or moved aside: saving would overwrite it.
+  storageLocked = loaded.locked,
   config = { ...DEFAULT_CONFIG },
   active = null,
   chooserOpen = false,
@@ -34,23 +45,56 @@ const busy = new Set(),
   groupOverride = new Map(),
   inventory = { data: null, error: null };
 
+// Never writes a workspace that would fail validation on the next load.
 function save() {
+  if (storageLocked) return;
+  if (!saveable(state)) {
+    toast('Changes were not saved: the workspace exceeds its limits. Delete or archive cases.');
+    return;
+  }
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch {
     toast('Storage unavailable or full. Export a backup to avoid losing changes.');
   }
 }
-function toast(message) {
-  $('#toast').textContent = message;
-  $('#toast').classList.add('visible');
+// `action` adds one button ({label, run}); such a toast stays longer and can be clicked.
+function toast(message, action = null) {
+  const el = $('#toast');
+  el.textContent = message;
+  el.classList.toggle('actionable', Boolean(action));
+  if (action) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = action.label;
+    button.onclick = () => {
+      el.classList.remove('visible');
+      action.run();
+    };
+    el.append(button);
+  }
+  el.classList.add('visible');
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => $('#toast').classList.remove('visible'), 6000);
+  toast.timer = setTimeout(() => el.classList.remove('visible'), action ? 30000 : 6000);
 }
-// 'system' removes the attribute so the stylesheet follows prefers-color-scheme.
+function download(text, filename) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+// 'system' removes the attribute so the stylesheet follows prefers-color-scheme. The early
+// theme script reads its own key, so it never parses the workspace.
 function applyTheme() {
   if (state.theme === 'system') delete document.documentElement.dataset.theme;
   else document.documentElement.dataset.theme = state.theme;
+  try {
+    localStorage.setItem(THEME_KEY, state.theme);
+  } catch {
+    /* Storage unavailable: the theme still applies for this visit. */
+  }
 }
 applyTheme();
 
@@ -59,6 +103,7 @@ applyTheme();
 const tmdsOn = () => config.tmds && state.tmds !== false;
 let inventoryTimer = null;
 async function loadInventory() {
+  // Without a completed server check (`checked`), TMDS is "not evaluated" (see changes.js).
   try {
     const data = await fetchAgents();
     if (data?.enabled === false) {
@@ -95,29 +140,46 @@ function setTmds(on) {
   render();
 }
 
-// Server watches
+// Server watches. A failed sync backs off exponentially (30 s up to an hour, or the server's
+// Retry-After) instead of retrying on every case refresh; each distinct error is shown once.
 let watchQueue = Promise.resolve(),
-  lastWatchlist = '';
+  lastWatchlist = '',
+  watchFailure = null;
 function syncWatchlist(force = false) {
   const cases = state.cases.filter((c) => !c.archived).map((c) => ({ id: c.id, products: [...c.products] })),
     key = JSON.stringify(cases);
   watchQueue = watchQueue.then(async () => {
     if (!force && key === lastWatchlist) return;
+    if (watchFailure && watchFailure.key === key && Date.now() < watchFailure.until) return;
     try {
       await syncWatches(cases);
       lastWatchlist = key;
+      watchFailure = null;
     } catch (e) {
-      toast(`Could not sync server watches: ${e.message}`);
+      const delay = Math.min((watchFailure?.delay || 15000) * 2, HOUR),
+        wait = Math.max(delay, (e.retryAfter || 0) * 1000);
+      const shown = watchFailure?.message;
+      watchFailure = { key, delay, until: Date.now() + wait, message: e.message };
+      if (e.message !== shown) toast(`Could not sync server watches: ${e.message}`);
     }
   });
   return watchQueue;
+}
+// Watch limits (decision 6): open cases are watched by the server; archived ones are not.
+const openCount = () => state.cases.filter((c) => !c.archived).length;
+function capacityMessage(reopen = false) {
+  if (!reopen && state.cases.length >= MAX_CASES)
+    return `Is It Fixed keeps at most ${MAX_CASES.toLocaleString('en')} cases, including archived ones. Delete cases you no longer need to open new ones.`;
+  if (openCount() >= MAX_OPEN_CASES)
+    return `At most ${MAX_OPEN_CASES} cases can be open (checked for updates) at a time. Archive or delete a case first.`;
+  return '';
 }
 
 // Actionable changes: compare the case with its stored baseline and report what changed.
 function notifyDesktop(c, changes) {
   if (globalThis.Notification?.permission !== 'granted') return;
   try {
-    const body = changes.length > 1 ? describeChanges(changes.slice(1)) : 'Open CVE Desk to review.';
+    const body = changes.length > 1 ? describeChanges(changes.slice(1)) : 'Open Is It Fixed to review.';
     new Notification(`${c.id}: ${changes[0].text}`, { body, tag: c.id });
   } catch {
     /* Notifications can be unavailable (for example in some mobile browsers). */
@@ -136,8 +198,17 @@ function evaluateCase(c) {
   return true;
 }
 function evaluateAll() {
-  for (const c of state.cases) if (!c.archived) evaluateCase(c);
+  for (const c of state.cases) if (!c.archived) safely(() => evaluateCase(c));
   save();
+}
+// One damaged case must not stop the others (or app start-up).
+function safely(fn, fallback) {
+  try {
+    return fn();
+  } catch (e) {
+    console.error(e);
+    return fallback;
+  }
 }
 
 // Formatting
@@ -213,9 +284,19 @@ function caseEntry(c) {
     '</div>',
   ].join('');
 }
+function brokenEntry(c) {
+  return [
+    `<div class="case-entry ${c.archived ? 'archived' : ''}">`,
+    `<button type="button" class="case-item" data-case="${esc(c.id)}">`,
+    `<span class="case-id">${esc(c.id)}</span><small>Could not be displayed</small>`,
+    '</button>',
+    '</div>',
+  ].join('');
+}
+const entry = (c) => safely(() => caseEntry(c), brokenEntry(c));
 function renderSidebar() {
   const q = $('#search').value.toLowerCase(),
-    match = (c) => `${c.id} ${sum(c.record, state.cvss).title}`.toLowerCase().includes(q);
+    match = (c) => safely(() => `${c.id} ${sum(c.record, state.cvss).title}`.toLowerCase().includes(q), true);
   const cases = sortedCases(state).filter(match),
     open = cases.filter((c) => !c.archived),
     archived = cases.filter((c) => c.archived);
@@ -223,7 +304,7 @@ function renderSidebar() {
   // Show archived matches while searching and keep the open case visible.
   const showArchived = archivedOpen || Boolean(q);
   $('#case-list').innerHTML =
-    open.map(caseEntry).join('') || `<p class="sidebar-empty">${q ? 'No matching cases.' : 'No open cases.'}</p>`;
+    open.map(entry).join('') || `<p class="sidebar-empty">${q ? 'No matching cases.' : 'No open cases.'}</p>`;
   applyBars($('#case-list'));
   $('#archived-list').hidden = !archived.length;
   if (!archived.length) {
@@ -231,11 +312,16 @@ function renderSidebar() {
     return;
   }
   const toggle = `<button type="button" class="archive-toggle" aria-expanded="${showArchived}">${icons.chevron}Archived <span>${archived.length}</span></button>`;
-  const entries = showArchived ? `<div class="archived-entries">${archived.map(caseEntry).join('')}</div>` : '';
+  const entries = showArchived ? `<div class="archived-entries">${archived.map(entry).join('')}</div>` : '';
   $('#archived-list').innerHTML = toggle + entries;
   applyBars($('#archived-list'));
 }
 function setArchived(c, archived) {
+  const full = !archived && capacityMessage(true);
+  if (full) {
+    toast(full);
+    return;
+  }
   if (archived) {
     c.archived = Date.now();
     markCaseRead(state, c.id);
@@ -251,13 +337,19 @@ function setArchived(c, archived) {
 // Routing
 function syncRoute() {
   const path = active ? `/${active}` : '/';
-  document.title = active ? `${active} · CVE Desk` : 'CVE Desk — your vulnerability workspace';
+  document.title = active ? `${active} · Is It Fixed` : 'Is It Fixed — your vulnerability workspace';
   if (location.pathname === path) return;
   const method = location.pathname.toUpperCase() === path.toUpperCase() ? 'replaceState' : 'pushState';
   history[method](null, '', path + location.hash);
 }
 function routeFromURL() {
-  const id = extractCveIds(decodeURIComponent(location.pathname))[0];
+  let path = location.pathname;
+  try {
+    path = decodeURIComponent(path);
+  } catch {
+    /* Malformed escape sequence: match the raw path. */
+  }
+  const id = extractCveIds(path).filter(validId)[0];
   if (!id) {
     active = null;
     render();
@@ -275,11 +367,30 @@ function render() {
   const main = $('#main'),
     c = state.cases.find((c) => c.id === active);
   const open = new Set([...main.querySelectorAll('details[data-detail][open]')].map((d) => d.dataset.detail));
-  main.innerHTML = c ? renderCase(c, context()) : renderHome(context(), homeFilter);
+  try {
+    main.innerHTML = c ? renderCase(c, context()) : renderHome(context(), homeFilter);
+  } catch (e) {
+    console.error(e);
+    main.innerHTML = renderFailure(c);
+    return;
+  }
   for (const d of main.querySelectorAll('details[data-detail]')) if (open.has(d.dataset.detail)) d.open = true;
   applyBars(main);
   if (c) bindCase(c);
   else bindHome();
+}
+// Fallback when a view throws (for example on damaged saved data).
+function renderFailure(c) {
+  const actions = c
+    ? `<div class="actions"><button type="button" data-delete="${esc(c.id)}">Delete case</button><a class="button" href="/">Back to overview</a></div>`
+    : '';
+  return [
+    '<section class="panel render-failure" role="alert">',
+    `<h1>${c ? esc(c.id) : 'Something went wrong'}</h1>`,
+    `<p>This ${c ? 'case' : 'page'} could not be displayed. Its saved data may be damaged; refreshing the case or restoring a backup can help.</p>`,
+    actions,
+    '</section>',
+  ].join('');
 }
 function bindCase(c) {
   $('#share-case').onclick = () => shareCase(c);
@@ -355,18 +466,26 @@ function openAdd() {
   $('#add-dialog').showModal();
   $('#cve-input').focus();
 }
-async function addCase(id) {
+// Returns false when the case could not be opened (limits); the message goes to `error` or a toast.
+async function addCase(id, error = null) {
   let c = state.cases.find((c) => c.id === id);
   if (c) {
-    const wasArchived = Boolean(c.archived);
+    const full = c.archived && capacityMessage(true);
+    const wasArchived = Boolean(c.archived) && !full;
     if (wasArchived) {
       delete c.archived;
       syncWatchlist();
     }
     openCase(id);
-    toast(wasArchived ? 'Restored from the archive.' : 'Opened existing case.');
+    toast(full || (wasArchived ? 'Restored from the archive.' : 'Opened existing case.'));
     if (wasArchived) refresh(c);
-    return;
+    return true;
+  }
+  const full = capacityMessage();
+  if (full) {
+    if (error) error.textContent = full;
+    else toast(full);
+    return false;
   }
   c = { id, products: [...state.products], notes: '', created: Date.now() };
   state.cases.unshift(c);
@@ -375,6 +494,7 @@ async function addCase(id) {
   render();
   // A new case is fetched on demand; it never forces an upstream refresh.
   await refresh(c);
+  return true;
 }
 // `force` asks the server to re-check upstream sources; only offered when the server allows it.
 async function refresh(c, force = false) {
@@ -485,12 +605,18 @@ const settings = setupSettings({
     toast('Workspace restored.');
   },
 });
-// Footer links depend on the server configuration.
+// Footer, sidebar and disclaimer links depend on the server configuration.
 function renderFooter() {
-  for (const k of ['imprint', 'privacy']) $(`[data-legal="${k}"]`).hidden = !config.legal[k];
-  const source = $('[data-source]');
-  source.hidden = !config.sourceUrl;
-  if (config.sourceUrl) source.querySelector('a').href = config.sourceUrl;
+  for (const k of ['imprint', 'privacy']) {
+    $(`[data-legal="${k}"]`).hidden = !config.legal[k];
+    $(`[data-legal-link="${k}"]`).hidden = !config.legal[k];
+  }
+  $('.disclaimer-links').hidden = !config.legal.imprint && !config.legal.privacy;
+  $('[data-source]').hidden = !config.sourceUrl;
+  for (const a of document.querySelectorAll('[data-source-link]')) {
+    a.hidden = !config.sourceUrl;
+    if (config.sourceUrl) a.href = config.sourceUrl;
+  }
 }
 
 // First-visit disclaimer: shown until this version is acknowledged; Escape does not dismiss it.
@@ -529,6 +655,11 @@ function openFromText(text, error) {
   const ids = extractCveIds(text).filter(validId);
   if (!ids.length) {
     error.textContent = 'No CVE ID found. Paste an ID such as CVE-2024-3094 or a link that contains one.';
+    return false;
+  }
+  const full = !state.cases.some((c) => c.id === ids[0]) && capacityMessage();
+  if (full) {
+    error.textContent = full;
     return false;
   }
   addCase(ids[0]);
@@ -576,15 +707,18 @@ setInterval(catchUp, 60000);
 setInterval(() => syncWatchlist(true), 300000);
 document.addEventListener('visibilitychange', catchUp);
 window.addEventListener('online', () => {
+  if (watchFailure) watchFailure.until = 0;
   syncWatchlist(true).then(catchUp);
 });
 
-// Startup: render from saved state, then apply the server configuration.
+// Startup: render from saved state, then apply the server configuration. Nothing here may
+// stop the rest: configuration, inventory and watch sync must start even if a case fails.
 // Unchanged saved cases get their first action baseline silently.
-for (const c of state.cases) if (!c.actionBaseline) evaluateCase(c);
+for (const c of state.cases) if (!c.actionBaseline) safely(() => evaluateCase(c));
 save();
-showDisclaimer();
-routeFromURL();
+safely(showDisclaimer);
+safely(routeFromURL);
+startupNotices();
 fetchConfig().then((c) => {
   config = c;
   renderFooter();
@@ -593,3 +727,29 @@ fetchConfig().then((c) => {
   render();
 });
 syncWatchlist().then(catchUp);
+
+// Problems found while loading the saved workspace.
+function startupNotices() {
+  const day = new Date().toISOString().slice(0, 10);
+  if (loaded.recovery) {
+    toast('Your saved workspace could not be read, so Is It Fixed started empty. A copy is kept in this browser.', {
+      label: 'Export copy',
+      run: () => download(localStorage.getItem(loaded.recovery) || '', `isitfixed-recovery-${day}.json`),
+    });
+  } else if (loaded.locked) {
+    toast('Your saved workspace could not be read. Export it before making changes; nothing is saved until then.', {
+      label: 'Export',
+      run() {
+        download(loaded.raw || '', `isitfixed-recovery-${day}.json`);
+        storageLocked = false;
+        save();
+      },
+    });
+  } else if (loaded.report.archivedCases || loaded.report.droppedCases) {
+    const archived = loaded.report.archivedCases
+      ? `${loaded.report.archivedCases} cases were archived: at most ${MAX_OPEN_CASES} can be open.`
+      : '';
+    const dropped = loaded.report.droppedCases ? `${loaded.report.droppedCases} damaged cases were removed.` : '';
+    toast([archived, dropped].filter(Boolean).join(' '));
+  }
+}

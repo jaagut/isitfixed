@@ -5,13 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#173c32" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#111714" media="(prefers-color-scheme: dark)" />
-    <title>CVE Desk — your vulnerability workspace</title>
+    <title>Is It Fixed — your vulnerability workspace</title>
+    <link rel="icon" href="/assets/icon.svg" type="image/svg+xml" />
     <script src="/src/theme.js"></script>
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
     <aside class="sidebar">
-      <a class="brand" href="/"><span class="brand-icon">c/</span> CVE Desk</a>
+      <a class="brand" href="/"><span class="brand-icon">?/</span> Is It Fixed</a>
       <button type="button" id="new-case" class="primary full">＋ Open a case <kbd>N</kbd></button>
       <label class="search">
         <span aria-hidden="true">⌕</span>
@@ -21,9 +22,22 @@
       <nav id="case-list" aria-label="Saved cases"></nav>
       <nav id="archived-list" aria-label="Archived cases" hidden></nav>
       <div class="sidebar-bottom">
-        <button type="button" id="settings-button" aria-label="Settings">
-          <span aria-hidden="true">⚙</span><span class="settings-label">Settings</span>
-        </button>
+        <div class="sidebar-actions">
+          <button type="button" id="settings-button" aria-label="Settings">
+            <span aria-hidden="true">⚙</span><span class="settings-label">Settings</span>
+          </button>
+          <a
+            class="source-link icon-link"
+            data-source-link
+            href="/"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Source code on GitHub"
+            title="Source code on GitHub"
+            hidden
+            ><span class="github-icon" aria-hidden="true"></span
+          ></a>
+        </div>
         <p><span class="dot safe"></span> Cases stored on this device</p>
       </div>
       <div
@@ -42,14 +56,24 @@
       <main id="main"></main>
       <footer class="site-footer">
         <p class="site-disclaimer">
-          CVE Desk is an informational tool. Data comes from public vendor sources and may be incomplete, delayed or
+          Is It Fixed is an informational tool. Data comes from public vendor sources and may be incomplete, delayed or
           wrong. No warranty — use at your own discretion and verify with the vendor before acting. Not affiliated with
           or endorsed by Red Hat, SUSE, Canonical, Debian, Alpine, Microsoft or Trend Micro.
         </p>
         <ul class="footer-links">
           <li data-legal="imprint" hidden><a href="/imprint">Imprint</a></li>
           <li data-legal="privacy" hidden><a href="/privacy">Privacy</a></li>
-          <li data-source hidden><a href="/" target="_blank" rel="noopener noreferrer">Source code</a></li>
+          <li data-source hidden>
+            <a
+              class="source-link"
+              data-source-link
+              href="/"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Source code on GitHub"
+              ><span class="github-icon" aria-hidden="true"></span>Source code</a
+            >
+          </li>
         </ul>
       </footer>
     </div>
@@ -112,7 +136,7 @@
         <h3 id="settings-updates">Updates &amp; notifications</h3>
         <label class="toggle">
           <input type="checkbox" id="auto-refresh" />
-          Check cases every hour while CVE Desk is open
+          Check cases every hour while Is It Fixed is open
         </label>
         <p class="settings-hint">
           The server also re-checks your cases hourly while this tab is closed. You are told only about changes you can
@@ -136,8 +160,8 @@
         </label>
         <p class="settings-hint" id="tmds-hint">
           Matches kernel fixes against the kernels bundled in Deep Security Agent 20 LTS and the published Kernel
-          Support Package list. Turn this off if you do not use Deep Security: CVE Desk then hides all TMDS details and
-          stops loading the inventory.
+          Support Package list. Turn this off if you do not use Deep Security: Is It Fixed then hides all TMDS details
+          and stops loading the inventory.
         </p>
         <p class="settings-hint" id="tmds-server-off" hidden>TMDS support data is turned off on this server.</p>
       </section>
@@ -159,13 +183,18 @@
     <dialog id="disclaimer-dialog" aria-labelledby="disclaimer-title" aria-describedby="disclaimer-text">
       <h2 id="disclaimer-title">Before you start</h2>
       <p id="disclaimer-text">
-        CVE Desk is an informational tool. Data comes from public vendor sources and may be incomplete, delayed or
+        Is It Fixed is an informational tool. Data comes from public vendor sources and may be incomplete, delayed or
         wrong. No warranty — use at your own discretion and verify with the vendor before acting. Not affiliated with or
         endorsed by Red Hat, SUSE, Canonical, Debian, Alpine, Microsoft or Trend Micro.
       </p>
       <p class="disclaimer-privacy">
-        Your cases and settings stay in this browser. Only CVE IDs and the OS vendors you check are sent to the server,
-        so it can keep them up to date. No cookies, no tracking.
+        Your cases and settings stay in this browser. To keep your cases up to date, the server receives their CVE IDs,
+        the OS vendors you selected and a random workspace ID created in this browser, which does not identify you. No
+        cookies, no tracking.
+      </p>
+      <p class="disclaimer-links" hidden>
+        <a href="/imprint" data-legal-link="imprint" hidden>Imprint</a>
+        <a href="/privacy" data-legal-link="privacy" hidden>Privacy policy</a>
       </p>
       <button type="button" id="disclaimer-accept" class="primary full">I understand</button>
     </dialog>

@@ -85,7 +85,8 @@ export function migrateProducts(ids) {
     ),
   ];
 }
-export const validId = (id) => /^CVE-\d{4}-\d{4,}$/.test(id);
+// Same rule as the API: at most 32 characters.
+export const validId = (id) => typeof id === 'string' && id.length <= 32 && /^CVE-\d{4}-\d{4,}$/.test(id);
 export function vendorURL(product, id) {
   if (product.vendor === 'Red Hat') return `https://access.redhat.com/security/cve/${id}`;
   if (product.vendor === 'Debian') return `https://security-tracker.debian.org/tracker/${id}`;

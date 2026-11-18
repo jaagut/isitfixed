@@ -313,8 +313,8 @@ def render(data):
         "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
         "<meta name='color-scheme' content='light dark'><meta http-equiv='refresh' content='30'>"
-        "<title>CVE Desk admin</title><link rel='stylesheet' href='/admin.css'></head>"
-        f"<body><header><h1>CVE Desk admin</h1><p>Generated {generated} · refreshes every 30 s · "
+        "<title>Is It Fixed admin</title><link rel='stylesheet' href='/admin.css'></head>"
+        f"<body><header><h1>Is It Fixed admin</h1><p>Generated {generated} · refreshes every 30 s · "
         "<a href='/api/stats'>JSON</a></p></header>"
         f"<main>{body}</main></body></html>"
     )
@@ -335,7 +335,7 @@ def authorized(header, token):
 
 
 def create_admin_app(public_app, settings):
-    app = FastAPI(title="CVE Desk admin", docs_url=None, redoc_url=None, openapi_url=None)
+    app = FastAPI(title="Is It Fixed admin", docs_url=None, redoc_url=None, openapi_url=None)
     sampler = ProcessSampler()
 
     @app.middleware("http")
@@ -344,7 +344,7 @@ def create_admin_app(public_app, settings):
             return JSONResponse(
                 {"detail": "Authentication required."},
                 status_code=401,
-                headers={"WWW-Authenticate": 'Basic realm="CVE Desk admin", charset="UTF-8"'},
+                headers={"WWW-Authenticate": 'Basic realm="Is It Fixed admin", charset="UTF-8"'},
             )
         response = await call_next(request)
         response.headers.setdefault("Cache-Control", "no-store")

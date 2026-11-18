@@ -26,7 +26,7 @@ STREAMS = {
     **{f"sles{v}": f"SuSE_{v}" for v in (15, 16)},
     **{f"ubuntu{v}": f"Ubuntu_{v[:2]}.{v[2:]}" for v in ("2004", "2204", "2404", "2604")},
 }
-logger = logging.getLogger("cve-desk.tmds")
+logger = logging.getLogger("isitfixed.tmds")
 
 
 def inspect_archive(source, card):
@@ -69,6 +69,8 @@ def latest_cards(feed):
 
 class Inventory(HourlyJob):
     name = "tmds-agents"
+    # Heartbeats come before the feed download and before every agent archive (download plus inspection).
+    step_deadline = AGENT_DEADLINE + 60
 
     async def run(self):
         feed = json.loads(await read_limited(self.client, FEED, limit=FEED_LIMIT, deadline=FEED_DEADLINE))

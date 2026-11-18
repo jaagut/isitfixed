@@ -89,7 +89,7 @@ test('server config: defaults when unavailable, strict types, https-only source 
         manualRefresh: true,
         tmds: false,
         legal: { imprint: true, privacy: 'yes' },
-        sourceUrl: 'https://github.com/jaagut/cve-viewer',
+        sourceUrl: 'https://github.com/jaagut/isitfixed',
         retentionDays: 10,
       });
     };
@@ -98,7 +98,7 @@ test('server config: defaults when unavailable, strict types, https-only source 
       manualRefresh: true,
       tmds: false,
       legal: { imprint: true, privacy: false },
-      sourceUrl: 'https://github.com/jaagut/cve-viewer',
+      sourceUrl: 'https://github.com/jaagut/isitfixed',
       retentionDays: 10,
     });
   } finally {

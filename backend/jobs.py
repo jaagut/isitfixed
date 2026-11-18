@@ -7,7 +7,7 @@ import time
 from .errors import describe
 
 HOUR = 3600
-logger = logging.getLogger("cve-desk.jobs")
+logger = logging.getLogger("isitfixed.jobs")
 
 
 class HourlyJob:
@@ -20,6 +20,7 @@ class HourlyJob:
     name = "job"
     interval = HOUR
     pause = 60  # seconds between worker iterations
+    step_deadline = 600  # longest a single step (between two heartbeats) may take; bounds the health check
 
     def __init__(self, cache, client, clock=time.time, breaker=None, stats=None):
         self.cache, self.client, self.clock = cache, client, clock
@@ -60,6 +61,7 @@ class HourlyJob:
             try:
                 await self.run()
             except asyncio.CancelledError:
+                self.error = "Refresh interrupted; retry pending"
                 raise
             except Exception as error:
                 self.error = describe(error)

@@ -14,7 +14,7 @@ from .main import create_app
 from .settings import Settings, SettingsError
 from .watchdog import Watchdog
 
-logger = logging.getLogger("cve-desk")
+logger = logging.getLogger("isitfixed")
 
 
 class Server(uvicorn.Server):
