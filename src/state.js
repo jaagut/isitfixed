@@ -140,6 +140,10 @@ export function validateState(s, report = {}, now = Date.now()) {
   report.archivedCases = capOpenCases(s, now);
   s.activity = (Array.isArray(s.activity) ? s.activity : []).map(activityEntry).filter(Boolean).slice(0, 100);
   s.products = Array.isArray(s.products) ? migrateProducts(strings(s.products)) : defaultState().products;
+  // Cases whose OS selection was never changed follow the default selection. Older saves
+  // have no flag: a selection that still equals the defaults counts as untouched.
+  for (const c of s.cases)
+    if (typeof c.customProducts !== 'boolean') c.customProducts = !sameSelection(c.products, s.products);
   if (s.cvss !== undefined && !CVSS_VERSIONS.includes(s.cvss)) delete s.cvss;
   if (s.osOrder !== undefined) {
     if (Array.isArray(s.osOrder)) s.osOrder = strings(s.osOrder);
@@ -151,6 +155,19 @@ export function validateState(s, report = {}, now = Date.now()) {
   s.auto = s.auto !== false;
   if (s.disclaimerAccepted !== undefined && typeof s.disclaimerAccepted !== 'string') delete s.disclaimerAccepted;
   return s;
+}
+
+export const sameSelection = (a, b) => a.length === b.length && a.every((id) => b.includes(id));
+
+// Applies the default OS selection to every case that still follows it; returns those cases.
+export function followDefaults(s) {
+  const changed = [];
+  for (const c of s.cases) {
+    if (c.customProducts || sameSelection(c.products, s.products)) continue;
+    c.products = [...s.products];
+    changed.push(c);
+  }
+  return changed;
 }
 
 // Cheap check before saving: everything validateState would reject outright.

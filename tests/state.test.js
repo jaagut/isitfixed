@@ -7,6 +7,7 @@ import {
   DISCLAIMER_VERSION,
   MAX_OPEN_CASES,
   caseSearchText,
+  followDefaults,
 } from '../src/state.js';
 import { loadWorkspace, saveWorkspace, loadTheme, saveTheme, createStore } from '../src/storage.js';
 const kase = (n, extra = {}) => ({ id: `CVE-2026-${String(n).padStart(4, '0')}`, products: [], notes: '', ...extra });
@@ -253,4 +254,30 @@ test('overlapping workspace saves commit in call order and a failed save does no
   assert.equal((await saveWorkspace(defaultState(), db)).saved, false);
   db.put = async () => {};
   assert.equal((await saveWorkspace(defaultState(), db)).saved, true);
+});
+
+test('cases with an untouched OS selection follow the defaults; customized ones keep theirs', () => {
+  const s = validateState({
+    version: 1,
+    products: ['rhel9', 'debian12'],
+    activity: [],
+    cases: [
+      { id: 'CVE-2026-0001', products: ['debian12', 'rhel9'], notes: '' },
+      { id: 'CVE-2026-0002', products: ['rhel9'], notes: '' },
+      { id: 'CVE-2026-0003', products: ['rhel9', 'debian12'], notes: '', customProducts: true },
+    ],
+  });
+  assert.deepEqual(
+    s.cases.map((c) => c.customProducts),
+    [false, true, true],
+  );
+  s.products = ['rhel10', 'ubuntu2404'];
+  const changed = followDefaults(s);
+  assert.deepEqual(
+    changed.map((c) => c.id),
+    ['CVE-2026-0001'],
+  );
+  assert.deepEqual(s.cases[0].products, ['rhel10', 'ubuntu2404']);
+  assert.deepEqual(s.cases[1].products, ['rhel9']);
+  assert.deepEqual(followDefaults(s), []);
 });

@@ -8,8 +8,15 @@ import { choices, orderedVendors } from './render/case.js';
 
 const $ = (s) => document.querySelector(s);
 
+// "All" chip of an OS row: selects every version of that OS, or clears them when all are selected.
+export function toggleAllVersions(button) {
+  const boxes = [...button.closest('.version-choices').querySelectorAll('input[type="checkbox"]')];
+  const select = !boxes.every((b) => b.checked);
+  for (const box of boxes) box.checked = select;
+}
+
 /**
- * @param app {getState, getConfig, save, render, applyTheme, toast, setTmds(on), restore(next)}
+ * @param app {getState, getConfig, save, render, applyTheme, toast, setTmds(on), defaultsChanged(), restore(next)}
  * @returns {{open(): void, sync(): void}}
  */
 export function setupSettings(app) {
@@ -68,10 +75,18 @@ export function setupSettings(app) {
     [ids[i], ids[j]] = [ids[j], ids[i]];
     moveVendors(ids, handle.dataset.handle);
   };
-  defaults.onchange = (e) => {
+  const applyDefaults = (focus) => {
     app.getState().products = [...defaults.querySelectorAll('input[value]:checked')].map((i) => i.value);
     app.save();
-    renderDefaults(`input[value="${e.target.value}"]`);
+    renderDefaults(focus);
+    app.defaultsChanged();
+  };
+  defaults.onchange = (e) => applyDefaults(`input[value="${e.target.value}"]`);
+  defaults.onclick = (e) => {
+    const all = e.target.closest('[data-all]');
+    if (!all) return;
+    toggleAllVersions(all);
+    applyDefaults(`[data-all="${all.dataset.all}"]`);
   };
 
   $('#theme').onchange = (e) => {

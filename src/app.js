@@ -15,7 +15,7 @@ import {
 } from './api.js';
 import { validId, extractCveIds, PRODUCTS, VENDORS } from './data.js';
 import { caseActionState, diffActions, withoutTmds, describeChanges } from './changes.js';
-import { DISCLAIMER_VERSION, MAX_OPEN_CASES, MAX_CASES, saveable } from './state.js';
+import { DISCLAIMER_VERSION, MAX_OPEN_CASES, MAX_CASES, saveable, followDefaults } from './state.js';
 import { loadWorkspace, saveWorkspace, saveTheme } from './storage.js';
 import {
   matchesCase,
@@ -40,7 +40,7 @@ import {
 } from './render/common.js';
 import { renderCase } from './render/case.js';
 import { renderHome } from './render/home.js';
-import { setupSettings } from './settings.js';
+import { setupSettings, toggleAllVersions } from './settings.js';
 
 const $ = (s) => document.querySelector(s);
 const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -240,10 +240,14 @@ const context = () => ({
   groupOverride,
   now: Date.now(),
 });
-// Status bar segments grow by their number of OS versions from data-flex (no inline style
-// attributes under the CSP); their base width is their logos', so logos always fit their segment.
+// Status bar segments are proportional to their number of OS versions, one slot per version
+// (--n drives the slot lines). Set from data-flex: inline style attributes are blocked by the CSP.
 function applyBars(root) {
-  for (const el of root.querySelectorAll('[data-flex]')) el.style.flexGrow = String(Number(el.dataset.flex) || 1);
+  for (const el of root.querySelectorAll('[data-flex]')) {
+    const n = Number(el.dataset.flex) || 1;
+    el.style.flex = `${n} 1 0%`;
+    el.style.setProperty('--n', String(n));
+  }
 }
 
 // Share sheet where available (mobile, some desktops); otherwise copy the link.
@@ -501,13 +505,23 @@ function bindCase(c) {
     $('#case-products').hidden = !chooserOpen;
     e.currentTarget.setAttribute('aria-expanded', chooserOpen);
   };
-  $('#case-products').onchange = (e) => {
-    c.products = [...$('#case-products').querySelectorAll('input[value]:checked')].map((i) => i.value);
+  // Any change here makes the selection the case's own; it then stops following the defaults.
+  const chooser = $('#case-products');
+  const applyChoice = (focus) => {
+    c.products = [...chooser.querySelectorAll('input[value]:checked')].map((i) => i.value);
+    c.customProducts = true;
     save();
     syncWatchlist();
     render();
-    $(`#case-products input[value="${e.target.value}"]`)?.focus();
+    $(`#case-products ${focus}`)?.focus();
     refresh(c);
+  };
+  chooser.onchange = (e) => applyChoice(`input[value="${e.target.value}"]`);
+  chooser.onclick = (e) => {
+    const all = e.target.closest('[data-all]');
+    if (!all) return;
+    toggleAllVersions(all);
+    applyChoice(`[data-all="${all.dataset.all}"]`);
   };
 }
 // One delegated handler for both views.
@@ -517,8 +531,9 @@ $('#main').addEventListener('click', (e) => {
   if (scroll) {
     e.preventDefault();
     const target = document.getElementById(scroll.dataset.scroll);
+    if (target?.tagName === 'DETAILS') target.open = true;
     target?.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' });
-    target?.querySelector('[tabindex="-1"]')?.focus({ preventScroll: true });
+    target?.querySelector('summary, [tabindex="-1"]')?.focus({ preventScroll: true });
     return;
   }
   const f = e.target.closest('[data-filter]');
@@ -575,7 +590,8 @@ async function addCase(id, error = null) {
     else toast(full);
     return false;
   }
-  c = { id, products: [...state.products], notes: '', created: Date.now() };
+  // A new case follows the default OS selection until its own selection is changed.
+  c = { id, products: [...state.products], customProducts: false, notes: '', created: Date.now() };
   state.cases.unshift(c);
   active = id;
   save();
@@ -686,6 +702,15 @@ const settings = setupSettings({
   applyTheme,
   toast,
   setTmds,
+  // Cases that still follow the default OS selection take it over and fetch new vendors.
+  defaultsChanged() {
+    const changed = followDefaults(state);
+    if (!changed.length) return;
+    save();
+    syncWatchlist();
+    render();
+    for (const c of changed) if (!c.archived) refresh(c);
+  },
   restore(next) {
     if (busy.size) throw Error('Wait for running refreshes to finish before restoring.');
     // The disclaimer acknowledgement belongs to this browser, not to the backup.
@@ -756,6 +781,7 @@ function renderSearchOptions() {
   const selected = (field, id) => selectedSearchFilter(query, field, id);
   const family = VENDORS.find((v) => v.id === searchFamily);
   filterBack.hidden = !family;
+  $('#close-search-filter').hidden = !searchFilterLabel(query, searchField);
   $('#search-filter-title').textContent = family?.name || (searchField === 'os' ? 'Operating system' : 'Status');
   if (family) {
     filterOptions.innerHTML =
@@ -844,7 +870,9 @@ filterOptions.onclick = (e) => {
   const button = e.target.closest('[data-search-token]');
   if (!button) return;
   const input = $('#search');
-  input.value = replaceSearchFilter(input.value, searchField, button.dataset.searchToken);
+  // Choosing the active option again removes that filter.
+  const token = button.getAttribute('aria-pressed') === 'true' ? '' : button.dataset.searchToken;
+  input.value = replaceSearchFilter(input.value, searchField, token);
   updateSearch();
   hideSearchOptions(true);
 };
@@ -865,7 +893,13 @@ filterBack.onclick = () => {
   renderSearchOptions();
   filterOptions.querySelector(`[data-search-family="${family}"]`)?.focus();
 };
-$('#close-search-filter').onclick = () => hideSearchOptions(true);
+// The panel's × removes this picker's filter (OS or status) and closes the panel.
+$('#close-search-filter').onclick = () => {
+  const input = $('#search');
+  input.value = replaceSearchFilter(input.value, searchField);
+  updateSearch();
+  hideSearchOptions(true);
+};
 // Collapse after outside clicks so the in-flow panel cannot move a case before its click lands.
 // composedPath() is recorded at dispatch: choosing a family re-renders the options, so the
 // clicked button is no longer in the document when this listener runs.
@@ -926,6 +960,12 @@ for (const b of document.querySelectorAll('[data-close]')) {
   b.onclick = () => document.getElementById(b.dataset.close).close();
 }
 $('#settings-button').onclick = () => settings.open();
+// Settings closes on a click outside the dialog box (on its backdrop).
+$('#settings-dialog').addEventListener('click', (e) => {
+  const box = e.currentTarget.getBoundingClientRect();
+  const outside = e.clientX < box.left || e.clientX > box.right || e.clientY < box.top || e.clientY > box.bottom;
+  if (e.target === e.currentTarget && outside) e.currentTarget.close();
+});
 $('.brand').onclick = (e) => {
   if (e.button || e.ctrlKey || e.metaKey || e.shiftKey) return;
   e.preventDefault();

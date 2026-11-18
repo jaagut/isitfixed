@@ -14,12 +14,13 @@ export function renderCase(c, ctx) {
   const order = orderedVendors(ctx.state).map((v) => v.id);
   const products = selected(c).sort((a, b) => order.indexOf(a.family) - order.indexOf(b.family));
   const cards = sourceCards(c, products, { tmds: ctx.tmdsOn, inventory: ctx.inventory, now: ctx.now });
+  const summary = sourceSummary(cards);
   return [
-    caseHeader(c, s, ctx, sourceSummary(cards)),
+    caseHeader(c, s, ctx, summary),
     caseAlerts(c, s),
     caseOverview(c, s, ctx),
     productsSection(c, ctx),
-    sourcesSection(cards),
+    sourcesSection(cards, summary),
   ].join('');
 }
 
@@ -31,6 +32,7 @@ function caseHeader(c, s, ctx, summary) {
   const actions = [
     action('share-case', icons.share, 'Share'),
     action('archive-case', c.archived ? icons.unarchive : icons.archive, c.archived ? 'Unarchive' : 'Archive'),
+    action('delete-case', icons.trash, 'Delete', `data-delete="${esc(c.id)}"`),
     ctx.config.manualRefresh
       ? action('refresh', icons.refresh, loading ? 'Checking…' : 'Refresh', loading ? 'disabled' : '')
       : '',
@@ -117,9 +119,11 @@ export function orderedVendors(state) {
   const position = (v) => (order.includes(v.id) ? order.indexOf(v.id) : 99);
   return [...VENDORS].sort((a, b) => position(a) - position(b));
 }
+// One OS row: name, an "All" quick toggle and one chip per version.
 function vendorChoice(v, ids, sortable) {
   const products = PRODUCTS.filter((p) => p.family === v.id),
     count = products.filter((p) => ids.includes(p.id)).length;
+  const all = `<button type="button" class="version-all" data-all="${v.id}" aria-pressed="${count === products.length}" aria-label="All ${esc(v.name)} versions">All</button>`;
   const handle = sortable
     ? `<button type="button" class="drag-handle" data-handle="${v.id}" aria-label="Move ${esc(v.name)}. Drag, or press the up and down arrow keys." title="Drag to reorder">${icons.grip}</button>`
     : '';
@@ -130,15 +134,14 @@ function vendorChoice(v, ids, sortable) {
       `<span>${esc(p.version)}</span>`,
       '</label>',
     ].join('');
-  const selection = count ? `${count} of ${products.length} selected` : 'None selected';
   return [
     `<div class="vendor-choice ${count ? 'enabled' : ''}" data-vendor="${v.id}">`,
     handle,
     '<div class="vendor-choice-name">',
     logo(v.id),
-    `<div><strong>${esc(v.name)}</strong><small>${selection}</small></div>`,
+    `<strong>${esc(v.name)}</strong>`,
     '</div>',
-    `<div class="version-choices" role="group" aria-label="${esc(v.name)} versions">${products.map(version).join('')}</div>`,
+    `<div class="version-choices" role="group" aria-label="${esc(v.name)} versions">${all}${products.map(version).join('')}</div>`,
     '</div>',
   ].join('');
 }
@@ -150,14 +153,15 @@ export function choices(state, ids, sortable = false) {
 
 function productsSection(c, ctx) {
   const rows = groupRows(c, ctx) || '<p class="empty-row">Select products to start assessing this case.</p>';
+  // One panel: the chooser toggle is its top row and the chooser unfolds inside it, above the OS rows.
   return [
     '<section class="products-section">',
     '<div class="section-heading">',
-    `<div><h2>Operating systems <span class="count">${c.products.length}</span></h2></div>`,
-    `<button type="button" id="edit-products" class="disclosure-button" aria-expanded="${ctx.chooserOpen}" aria-controls="case-products">${icons.chevron}Choose OS versions</button>`,
+    `<h2>Operating systems <span class="count">${c.products.length}</span></h2>`,
     '</div>',
-    `<div id="case-products" class="product-choices panel" ${ctx.chooserOpen ? '' : 'hidden'}>${choices(ctx.state, c.products)}</div>`,
     '<div class="panel product-table">',
+    `<button type="button" id="edit-products" class="chooser-toggle" aria-expanded="${ctx.chooserOpen}" aria-controls="case-products">${icons.chevron}Choose OS versions</button>`,
+    `<div id="case-products" class="product-choices" ${ctx.chooserOpen ? '' : 'hidden'}>${choices(ctx.state, c.products)}</div>`,
     unlistedNote(c, ctx),
     rows,
     '</div>',
@@ -457,14 +461,15 @@ function sourceCard(s) {
     '</article>',
   ].join('');
 }
-function sourcesSection(cards) {
+// One collapsible section; its summary carries the source count and warnings.
+function sourcesSection(cards, summary) {
+  const warnings = summary.warnings
+    ? `<span class="status-line-warning">${plural(summary.warnings, 'warning')}</span>`
+    : '';
   return [
-    '<section class="sources-section" id="case-sources" aria-labelledby="sources-heading">',
-    '<div class="section-heading">',
-    '<h2 id="sources-heading" tabindex="-1">Sources</h2>',
-    '<p class="section-hint">The server caches vendor data and re-checks watched cases every hour.</p>',
-    '</div>',
+    '<details class="sources-section" id="case-sources" data-detail="sources">',
+    `<summary>${icons.chevron}<h2 id="sources-heading">Sources</h2><span class="sources-meta">${plural(summary.count, 'source')}${warnings}</span></summary>`,
     `<div class="source-grid">${cards.map(sourceCard).join('')}</div>`,
-    '</section>',
+    '</details>',
   ].join('');
 }

@@ -58,21 +58,21 @@ test('the OS picker replaces both OS qualifiers while keeping terms, exclusions 
 test('status bar has one segment per status with a logo per OS version on top, in order', () => {
   const two = { ...c, products: ['rhel9', 'rhel10', 'ubuntu2404', 'debian13'], apiChecked: 1234 };
   const bar = statusBar(two, { showChecked: true });
+  // "No data" (RHEL 9, RHEL 10, Debian 13) is left out while another status is known.
   const segments = [...bar.matchAll(/class="status-seg ([a-z_]+)" data-flex="(\d+)"/g)].map((m) => [m[1], m[2]]);
-  assert.deepEqual(segments, [
-    ['fix_available', '1'],
-    ['unknown', '3'],
-  ]);
-  // Each segment carries its own logos (one per version, no counts) above its coloured strip.
-  assert.equal((bar.match(/class="stack-logo"/g) || []).length, 4);
-  assert.match(bar, /data-tip="RHEL 9"><img[^>]*logo-rhel[^>]*><\/span><span class="stack-logo" data-tip="RHEL 10">/);
+  assert.deepEqual(segments, [['fix_available', '1']]);
   assert.match(bar, /aria-label="Fix available: Ubuntu 24.04"><span class="seg-logos" data-tip="Fix available">/);
-  assert.match(bar, /aria-label="No data: RHEL 9, RHEL 10, Debian 13"/);
   assert.match(bar, /<\/span><span class="seg-fill"><\/span><\/span>/);
+  assert.doesNotMatch(bar, /OS version/);
   assert.match(bar, /data-checked-at="1234"/);
   assert.doesNotMatch(statusBar(c), /data-checked-at/);
-  assert.match(bar, /4 OS versions/);
-  assert.match(statusBar({ ...c, products: ['rhel9'] }), />1 OS version<\/span>/);
   assert.equal(statusBar({ ...c, products: [] }), '');
   assert.doesNotMatch(bar, /tabindex=|<button|<details/);
+  // With nothing else known, "No data" is shown: one logo per version, no counts.
+  const unknown = statusBar({ ...c, products: ['rhel9', 'rhel10'], vendorData: undefined });
+  assert.match(unknown, /class="status-seg unknown" data-flex="2"/);
+  assert.match(
+    unknown,
+    /data-tip="RHEL 9"><img[^>]*logo-rhel[^>]*><\/span><span class="stack-logo" data-tip="RHEL 10">/,
+  );
 });

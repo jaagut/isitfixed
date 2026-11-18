@@ -51,21 +51,21 @@ function statusSegment(status, products) {
     '</span>',
   ].join('');
 }
-// Status bar for a case: one segment per status in STATUS_ORDER, sized by its number of OS
-// versions. Segment growth comes from data-flex after rendering (no inline styles under the CSP).
+// Status bar for a case: one segment per status in STATUS_ORDER, proportional to its OS versions,
+// with one slot (and logo) per version. "No data" is left out unless nothing else is known.
+// Segment sizes come from data-flex after rendering (no inline styles under the CSP).
 export function statusBar(c, { showChecked = false } = {}) {
   const products = selected(c);
   if (!products.length) return '';
   const groups = Object.fromEntries(STATUS_ORDER.map((status) => [status, []]));
   for (const product of products) groups[rowStatus(c, product)].push(product);
-  const segments = STATUS_ORDER.filter((s) => groups[s].length)
-    .map((s) => statusSegment(s, groups[s]))
-    .join('');
+  let shown = STATUS_ORDER.filter((s) => groups[s].length);
+  if (shown.length > 1) shown = shown.filter((s) => s !== 'unknown');
   const checked = showChecked
     ? `<small class="status-checked" data-checked-at="${Number(c.apiChecked || c.checked) || 0}"></small>`
     : '';
-  const total = `${products.length} OS ${products.length === 1 ? 'version' : 'versions'}`;
-  return `<span class="status-meter"><span class="status-total">${total}</span><span class="status-bar">${segments}</span>${checked}</span>`;
+  const segments = shown.map((s) => statusSegment(s, groups[s])).join('');
+  return `<span class="status-meter"><span class="status-bar">${segments}</span>${checked}</span>`;
 }
 export function cvssChip(s) {
   if (s.score == null) return '';

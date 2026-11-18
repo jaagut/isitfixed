@@ -104,7 +104,9 @@ test('header: refresh only when the server allows it; status line links to Sourc
   assert.match(renderCase(c, ctx({ config: { ...DEFAULT_CONFIG, manualRefresh: true } })), /id="refresh"/);
   const html = renderCase(c, ctx());
   assert.match(html, /href="#case-sources"[^>]*>.*Sources checked/);
-  assert.match(html, /<section class="sources-section" id="case-sources"/);
+  assert.match(html, /<details class="sources-section" id="case-sources" data-detail="sources">/);
+  assert.doesNotMatch(html, /re-checks watched cases/);
+  assert.match(html, /id="delete-case"[^>]*data-delete="CVE-/);
   assert.doesNotMatch(html, /class="freshness"/);
 });
 

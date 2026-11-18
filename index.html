@@ -148,20 +148,8 @@
             <div class="search-filter-heading">
               <button type="button" id="back-search-filter" aria-label="Back to operating systems" hidden>←</button>
               <strong id="search-filter-title">Filter cases</strong>
-              <button type="button" id="close-search-filter" aria-label="Collapse filter list" title="Collapse">
-                <svg
-                  viewBox="0 0 24 24"
-                  width="16"
-                  height="16"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="m6 15 6-6 6 6" />
-                </svg>
+              <button type="button" id="close-search-filter" aria-label="Remove this filter" title="Remove this filter">
+                ×
               </button>
             </div>
             <div id="search-options" class="search-options"></div>
@@ -228,8 +216,8 @@
       <section class="settings-section" aria-labelledby="settings-os">
         <h3 id="settings-os">Operating systems</h3>
         <p class="settings-hint">
-          Drag to set the order cases use. Selected versions are the defaults for new cases; each case can change its
-          own selection.
+          Drag to set the order cases use. Selected versions are the defaults: cases follow them until you change a
+          case's own selection.
         </p>
         <div id="default-products" class="product-choices sortable"></div>
       </section>
