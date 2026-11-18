@@ -53,6 +53,7 @@
   --focus: #9ab9a5;
   --accent-soft: #e5efe4;
   --bar-line: #ffffffcc;
+  --bar-label: #1d2a23;
   --accent-text: #1f4a39;
   --accent-border: #b9cfbd;
 
@@ -209,6 +210,7 @@
   --accent: #2f6e53;
   --accent-soft: #1f3a2e;
   --bar-line: #00000080;
+  --bar-label: #111a15;
   --accent-text: #b8e2c6;
   --accent-border: #33594a;
   --accent-hover: #387e60;
@@ -352,6 +354,7 @@
     --accent: #2f6e53;
     --accent-soft: #1f3a2e;
     --bar-line: #00000080;
+    --bar-label: #111a15;
     --accent-text: #b8e2c6;
     --accent-border: #33594a;
     --accent-hover: #387e60;
@@ -1025,7 +1028,7 @@ span.product-name {
   overflow: hidden;
   white-space: nowrap;
   color: var(--text-muted);
-  margin: 7px 0 0 27px;
+  margin: 7px 0 0;
   font-size: 11px;
 }
 .case-update {
@@ -1304,9 +1307,6 @@ span.product-name {
   margin-top: 8px;
   min-width: 0;
 }
-.case-item .status-meter {
-  margin-left: 27px;
-}
 .status-bar {
   display: flex;
   align-items: flex-end;
@@ -1333,7 +1333,10 @@ span.product-name {
   --seg: var(--unaffected-solid);
 }
 .seg-fill {
+  display: flex;
+  align-items: center;
   height: 4px;
+  overflow: hidden;
   /* Equal 1px lines at the start of every slot (one per OS version), also between statuses. */
   background:
     linear-gradient(90deg, var(--bar-line) 1px, transparent 0) 0 0 / calc(100% / var(--n)) 100%,
@@ -1350,16 +1353,20 @@ span.product-name {
 .status-seg:only-child .seg-fill {
   border-radius: 2px;
 }
-/* Collapsed logos keep their width (so segments never jump) but no height. */
-.status-seg + .status-seg .seg-logos {
-  box-shadow: inset 1px 0 0 var(--bar-line);
+/* The status name lives in the bar; it shows once the bar is as tall as the logo row. */
+.seg-label {
+  min-width: 0;
+  padding: 0 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 700 10px/1 var(--font-sans);
+  color: var(--bar-label);
+  opacity: 0;
+  transition: opacity 100ms ease;
 }
-.status-seg:first-child .seg-logos {
-  border-top-left-radius: 6px;
-}
-.status-seg:last-child .seg-logos {
-  border-top-right-radius: 6px;
-}
+/* Open card: the thick bar shows only the status boundaries; the per-version lines move up to
+   the logo row, so they never cut through the status name. */
 .seg-logos {
   position: relative;
   display: flex;
@@ -1367,7 +1374,7 @@ span.product-name {
   justify-content: space-around;
   max-height: 0;
   padding: 0;
-  background: color-mix(in srgb, var(--seg) 22%, transparent);
+  background: linear-gradient(90deg, var(--bar-line) 1px, transparent 0) 0 0 / calc(100% / var(--n)) 100%;
   opacity: 0;
   visibility: hidden;
   overflow: hidden;
@@ -1377,13 +1384,16 @@ span.product-name {
     opacity 100ms ease,
     visibility 0s 140ms;
 }
+.status-seg:first-child .seg-logos {
+  background-position-x: -1px;
+}
 .case-entry:hover .seg-logos,
 .home-case-entry:hover .seg-logos,
 .case-entry:has(:focus-visible) .seg-logos,
 .home-case-entry:has(:focus-visible) .seg-logos,
 .status-meter.expanded .seg-logos {
   max-height: 24px;
-  padding: 3px 0 2px;
+  padding: 2px 0 3px;
   opacity: 1;
   visibility: visible;
   /* Clipped while it grows, then visible so the version tooltips are not cut off. */
@@ -1401,11 +1411,24 @@ span.product-name {
 .case-entry:has(:focus-visible) .seg-fill,
 .home-case-entry:has(:focus-visible) .seg-fill,
 .status-meter.expanded .seg-fill {
-  height: 5px;
+  height: 18px;
+  background: var(--seg);
   transition-delay: 120ms;
 }
+.status-seg + .status-seg .seg-fill {
+  box-shadow: inset 1px 0 0 var(--bar-line);
+}
+.case-entry:hover .seg-label,
+.home-case-entry:hover .seg-label,
+.case-entry:has(:focus-visible) .seg-label,
+.home-case-entry:has(:focus-visible) .seg-label,
+.status-meter.expanded .seg-label {
+  opacity: 1;
+  transition-delay: 200ms;
+}
 .status-meter.expanded .seg-logos,
-.status-meter.expanded .seg-fill {
+.status-meter.expanded .seg-fill,
+.status-meter.expanded .seg-label {
   transition-delay: 0s;
 }
 .stack-logo {
@@ -1416,18 +1439,21 @@ span.product-name {
   min-width: 2px;
   height: 16px;
 }
-
+.stack-logo:hover {
+  z-index: 1;
+}
 .stack-logo .vendor-logo {
   width: 13px;
   height: 13px;
 }
-/* Instant tooltips: the version on a logo, the status name elsewhere on its tint. */
-.seg-logos[data-tip]:hover::after {
+/* Instant tooltip: each logo names its OS version. */
+.stack-logo[data-tip]:hover::after {
   content: attr(data-tip);
   position: absolute;
   z-index: 2;
   bottom: calc(100% + 5px);
-  left: 0;
+  left: 50%;
+  transform: translateX(-50%);
   padding: 3px 7px;
   border-radius: 5px;
   font: 600 10px/1.4 var(--font-sans);
@@ -2744,7 +2770,7 @@ button.home-stat[aria-pressed='true'] {
 }
 .home-case {
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) 240px;
+  grid-template-columns: minmax(0, 1fr) 240px;
   gap: 14px;
   align-items: center;
   width: 100%;
@@ -3245,6 +3271,67 @@ dialog input:not([type='checkbox']):not([type='file']) {
 [hidden] {
   display: none !important;
 }
+
+/* ---------------------------------------------------------------- Motion */
+/* Everything that opens or closes animates its height the same way: disclosures (<details>) and
+   panels toggled with the hidden attribute that carry .collapsible. Panels animate only while they
+   also have .animate (added when the user toggles them), so re-rendered pages never replay it. */
+:root {
+  interpolate-size: allow-keywords;
+}
+details::details-content {
+  block-size: 0;
+  overflow-y: clip;
+  transition:
+    block-size 200ms ease,
+    content-visibility 200ms allow-discrete;
+}
+details[open]::details-content {
+  block-size: auto;
+}
+.collapsible {
+  overflow-y: clip;
+  transition:
+    block-size 200ms ease,
+    opacity 160ms ease,
+    display 200ms allow-discrete;
+}
+.collapsible[hidden] {
+  block-size: 0;
+  opacity: 0;
+}
+@starting-style {
+  .collapsible.animate:not([hidden]) {
+    block-size: 0;
+    opacity: 0;
+  }
+}
+dialog {
+  transition:
+    opacity 160ms ease,
+    translate 160ms ease,
+    display 160ms allow-discrete,
+    overlay 160ms allow-discrete;
+}
+dialog:not([open]) {
+  opacity: 0;
+  translate: 0 8px;
+}
+@starting-style {
+  dialog[open] {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after,
+  ::details-content {
+    transition-duration: 0s !important;
+    animation-duration: 0s !important;
+  }
+}
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -3285,10 +3372,7 @@ dialog input:not([type='checkbox']):not([type='file']) {
     grid-template-columns: repeat(3, 1fr);
   }
   .home-case {
-    grid-template-columns: 20px minmax(0, 1fr);
-  }
-  .home-case-meta {
-    grid-column: 2;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 @media (max-width: 760px) {
@@ -3380,9 +3464,26 @@ dialog input:not([type='checkbox']):not([type='file']) {
     grid-column: 1 / -1;
     min-width: 0;
   }
+  .sidebar-cases {
+    block-size: 0;
+    opacity: 0;
+    overflow-y: clip;
+    transition:
+      block-size 200ms ease,
+      opacity 160ms ease,
+      display 200ms allow-discrete;
+  }
   .sidebar.cases-open .sidebar-cases {
     display: flex;
     flex-direction: column;
+    block-size: auto;
+    opacity: 1;
+  }
+  @starting-style {
+    .sidebar.cases-open .sidebar-cases {
+      block-size: 0;
+      opacity: 0;
+    }
   }
   .sidebar .search-area {
     margin: 0 0 6px;

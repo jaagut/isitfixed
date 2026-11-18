@@ -37,16 +37,17 @@ export function statusDescription(c) {
       .join(', ') || 'No OS versions selected'
   );
 }
-// One bar segment per status: its OS logos (one per version) on a tint of the segment colour,
-// directly above the coloured strip. One tooltip for the whole tint names the status and versions.
+// One bar segment per status. The bar names the status (shown when the card opens); above it, one
+// logo per OS version with that version as its tooltip.
 function statusSegment(status, products) {
   const versions = products.map(shortName);
-  const discs = products.map((p) => `<span class="stack-logo">${logo(p.family)}</span>`);
-  const label = esc(`${labels[status]}: ${versions.join(', ')}`);
+  const discs = products.map(
+    (p, i) => `<span class="stack-logo" data-tip="${esc(versions[i])}">${logo(p.family)}</span>`,
+  );
   return [
-    `<span class="status-seg ${status}" data-flex="${products.length}" role="img" aria-label="${label}">`,
-    `<span class="seg-logos" data-tip="${esc(`${labels[status]} · ${versions.join(', ')}`)}">${discs.join('')}</span>`,
-    '<span class="seg-fill"></span>',
+    `<span class="status-seg ${status}" data-flex="${products.length}" role="group" aria-label="${esc(`${labels[status]}: ${versions.join(', ')}`)}">`,
+    `<span class="seg-logos" aria-hidden="true">${discs.join('')}</span>`,
+    `<span class="seg-fill"><span class="seg-label">${labels[status]}</span></span>`,
     '</span>',
   ].join('');
 }

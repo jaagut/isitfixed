@@ -29,10 +29,8 @@ import { ago, esc, icons, time, HOUR } from './util.js';
 import {
   selected,
   sum,
-  caseStatus,
   statusDescription,
   statusBar,
-  statusSymbols,
   cvssChip,
   caseActions,
   logo,
@@ -305,15 +303,15 @@ function caseAction(e) {
 
 // Sidebar
 function caseEntry(c) {
-  const s = caseStatus(c),
-    description = esc(`Selected OS versions: ${statusDescription(c)}`),
+  // The status bar shows each status; screen readers get the summary as text.
+  const description = esc(`Selected OS versions: ${statusDescription(c)}`),
     archived = Boolean(c.archived);
-  const icon = `<span class="case-status ${s}" role="img" aria-label="${description}">${statusSymbols[s]}</span>`;
   return [
     `<div class="case-entry ${archived ? 'archived' : ''}">`,
     `<button type="button" class="case-item" data-case="${c.id}">`,
-    `<span class="case-id">${icon}${c.id}${cvssChip(sum(c.record, state.cvss))}<span class="case-update" aria-label="Unread update" hidden>New</span></span>`,
+    `<span class="case-id">${c.id}${cvssChip(sum(c.record, state.cvss))}<span class="case-update" aria-label="Unread update" hidden>New</span></span>`,
     `<small>${esc(c.record ? sum(c.record, state.cvss).title : c.savedTitle || 'Awaiting lookup')}</small>`,
+    `<span class="visually-hidden">${description}</span>`,
     statusBar(c, { showChecked: true }),
     '</button>',
     caseActions(c),
@@ -396,7 +394,7 @@ function renderSidebar() {
   const expanded = archivedOpen || Boolean(q);
   archive.hidden = !archived.length;
   if (archived.length && !archive.firstElementChild) {
-    archive.innerHTML = `<button type="button" class="archive-toggle">${icons.chevron}Archived <span></span></button><div class="archived-entries"></div>`;
+    archive.innerHTML = `<button type="button" class="archive-toggle">${icons.chevron}Archived <span></span></button><div class="archived-entries collapsible animate"></div>`;
   }
   if (archive.firstElementChild) {
     archive.firstElementChild.setAttribute('aria-expanded', String(expanded));
@@ -503,6 +501,8 @@ function bindCase(c) {
   if (refreshButton) refreshButton.onclick = () => refresh(c, true);
   $('#edit-products').onclick = (e) => {
     chooserOpen = !chooserOpen;
+    // Animate only this toggle (see .collapsible); re-renders show the chooser without motion.
+    $('#case-products').classList.add('animate');
     $('#case-products').hidden = !chooserOpen;
     e.currentTarget.setAttribute('aria-expanded', chooserOpen);
   };
@@ -832,13 +832,9 @@ function hideSearchOptions(restoreFocus = false) {
 function updateSearch() {
   const query = $('#search').value;
   $('#clear-search').hidden = !query;
-  // An active picker shows its choice ("RHEL 9", "Affected") instead of the field name.
-  for (const button of filterButtons) {
-    const label = searchFilterLabel(query, button.dataset.searchField);
-    const text = button.querySelector('.filter-label');
-    text.textContent = label || text.dataset.default;
-    button.classList.toggle('filter-active', Boolean(label));
-  }
+  // The pickers keep their names ("OS", "Status") and are tinted while one of their filters is set.
+  for (const button of filterButtons)
+    button.classList.toggle('filter-active', Boolean(searchFilterLabel(query, button.dataset.searchField)));
   renderSidebar();
 }
 $('#search').oninput = () => {

@@ -33,13 +33,11 @@ function howItWorks(tmdsOn) {
 }
 
 function homeCaseRow(c, ctx) {
-  const s = sum(c.record, ctx.state.cvss),
-    st = caseStatus(c);
+  const s = sum(c.record, ctx.state.cvss);
   const update = hasCaseUpdate(ctx.state, c) ? '<span class="case-update">New</span>' : '';
   return [
     '<div class="home-case-entry">',
     `<button type="button" class="home-case" data-case="${c.id}">`,
-    `<span class="case-status ${st}" aria-hidden="true">${statusSymbols[st]}</span>`,
     '<span class="home-case-main">',
     `<span class="home-case-id">${c.id}${cvssChip(s)}${update}</span>`,
     `<small>${esc(c.record ? s.title : c.savedTitle || 'Awaiting lookup')}</small>`,

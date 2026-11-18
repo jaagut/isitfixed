@@ -71,24 +71,21 @@ test('the OS picker replaces both OS qualifiers while keeping terms, exclusions 
   assert.equal(selectedSearchFilter(query, 'os', 'debian'), false);
 });
 
-test('status bar has one segment per status with a logo per OS version on top, in order', () => {
+test('status bar segments name their status in the bar, with one logo per OS version above', () => {
   const two = { ...c, products: ['rhel9', 'rhel10', 'ubuntu2404', 'debian13'], apiChecked: 1234 };
   const bar = statusBar(two, { showChecked: true });
   // "No data" (RHEL 9, RHEL 10, Debian 13) is left out while another status is known.
   const segments = [...bar.matchAll(/class="status-seg ([a-z_]+)" data-flex="(\d+)"/g)].map((m) => [m[1], m[2]]);
   assert.deepEqual(segments, [['fix_available', '1']]);
-  assert.match(
-    bar,
-    /aria-label="Fix available: Ubuntu 24.04"><span class="seg-logos" data-tip="Fix available · Ubuntu 24.04">/,
-  );
-  assert.match(bar, /<\/span><span class="seg-fill"><\/span><\/span>/);
-  assert.doesNotMatch(bar, /OS version/);
+  assert.match(bar, /aria-label="Fix available: Ubuntu 24.04"/);
+  assert.match(bar, /<span class="seg-fill"><span class="seg-label">Fix available<\/span><\/span>/);
+  assert.match(bar, /<span class="stack-logo" data-tip="Ubuntu 24.04"><img[^>]*logo-ubuntu/);
   assert.match(bar, /data-checked-at="1234"/);
   assert.doesNotMatch(statusBar(c), /data-checked-at/);
   assert.equal(statusBar({ ...c, products: [] }), '');
   assert.doesNotMatch(bar, /tabindex=|<button|<details/);
-  // With nothing else known, "No data" is shown: one logo per version, no counts.
+  // With nothing else known, "No data" is shown: one logo per version, each with its own tooltip.
   const unknown = statusBar({ ...c, products: ['rhel9', 'rhel10'], vendorData: undefined });
   assert.match(unknown, /class="status-seg unknown" data-flex="2"/);
-  assert.match(unknown, /data-tip="No data · RHEL 9, RHEL 10"><span class="stack-logo"><img[^>]*logo-rhel/);
+  assert.match(unknown, /data-tip="RHEL 9"><img[^>]*><\/span><span class="stack-logo" data-tip="RHEL 10">/);
 });
