@@ -104,3 +104,8 @@ The PR screenshots workflow retains the PNGs as an artifact for 14 days. For
 same-repository PRs it also commits the gallery to `screenshots/pr-<number>` and
 updates one bot comment with expandable images. Fork PRs receive the artifact
 without publishing a comment, because their token has no write permission.
+
+Trivy vulnerability checks run independently of GitHub code scanning. SARIF
+reports are retained as workflow artifacts for 14 days. To also upload them to
+the Security tab, enable code scanning in repository settings and set the
+Actions repository variable `ENABLE_CODE_SCANNING` to `true`.
