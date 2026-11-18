@@ -91,3 +91,16 @@ reference parser for the browser's assessment tests; the app does not use it.)
 ## License
 
 By contributing, you agree that your contributions are licensed under the [MIT License](LICENSE).
+
+### Mocked PR screenshots
+
+Run `pnpm exec playwright install chromium` once, then `pnpm screenshots`. This
+produces 12 PNGs in `screenshots/`: desktop/mobile, light/dark, and home, a simple
+case with two sidebar entries, or a complex case with 18 entries and all OS rows.
+The browser uses synthetic IndexedDB cases, a fixed clock, and intercepted API
+requests; it never contacts vendor services.
+
+The PR screenshots workflow retains the PNGs as an artifact for 14 days. For
+same-repository PRs it also commits the gallery to `screenshots/pr-<number>` and
+updates one bot comment with expandable images. Fork PRs receive the artifact
+without publishing a comment, because their token has no write permission.

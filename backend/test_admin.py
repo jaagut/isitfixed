@@ -1,5 +1,6 @@
 import base64
 import json
+import time
 
 from fastapi.testclient import TestClient
 
@@ -132,7 +133,7 @@ def test_admin_shows_degraded_and_stalled_states(tmp_path):
         assert "invalid data from source" in page and ("class='source bad'" in page or "class='source warn'" in page)
 
         class Owner:
-            beat = 0.0  # time.monotonic() at boot: long overdue
+            beat = time.monotonic() - 86400  # Stalled even on a freshly booted runner.
 
         class Task:
             def done(self):
