@@ -1,23 +1,24 @@
 import asyncio
 import copy
-from contextlib import asynccontextmanager, suppress
-import logging
 import json
+import logging
 import os
 import re
-from pathlib import Path
 import time
+from contextlib import asynccontextmanager, suppress
+from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Path as APIPath, Query, Response
+import httpx
+from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi import Path as APIPath
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-import httpx
 from pydantic import BaseModel, Field, field_validator
 
-from .cache import Cache, RETENTION
-from .tmds import Inventory
+from .cache import RETENTION, Cache
 from .providers import DEADLINES, FAMILIES, HOUR, NotPublished, Providers, describe
+from .tmds import Inventory
 
 ROOT = Path(__file__).resolve().parent.parent
 logger = logging.getLogger("cve-desk")
@@ -65,7 +66,12 @@ class Service:
                 if not touch and not self.cache.watched(cve):
                     return None
                 self.make_room(cve)
-                row = dict(payload={"id": cve, "vendorData": {"id": cve, "evidence": {}, "sources": {}}}, families=set(), unwatched_since=None if self.cache.watched(cve) else now, attempted=0)
+                row = dict(
+                    payload={"id": cve, "vendorData": {"id": cve, "evidence": {}, "sources": {}}},
+                    families=set(),
+                    unwatched_since=None if self.cache.watched(cve) else now,
+                    attempted=0,
+                )
             missing = families - row["families"]
             due = not row["attempted"] or now - row["attempted"] >= HOUR
             manual = force and now - row["attempted"] >= 60
@@ -86,9 +92,18 @@ class Service:
                 self.cache.delete(cve)
             current = self.cache.get(cve)
             lifecycle = current["unwatched_since"] if current else now
-            result["cache"] = {"watched": lifecycle is None, "expiresAt": int((lifecycle + RETENTION) * 1000) if lifecycle is not None else None, "lastAttempt": int(row["attempted"] * 1000), "retentionDays": 10, "refreshAfter": int((row["attempted"] + 60) * 1000)}
+            result["cache"] = {
+                "watched": lifecycle is None,
+                "expiresAt": int((lifecycle + RETENTION) * 1000) if lifecycle is not None else None,
+                "lastAttempt": int(row["attempted"] * 1000),
+                "retentionDays": 10,
+                "refreshAfter": int((row["attempted"] + 60) * 1000),
+            }
             if empty:
-                raise HTTPException(404 if result.get("notFound") else 502, result.get("error", "No CVE or vendor data could be retrieved. Try again later."))
+                raise HTTPException(
+                    404 if result.get("notFound") else 502,
+                    result.get("error", "No CVE or vendor data could be retrieved. Try again later."),
+                )
             return result
 
     async def refresh(self, cve, row, families, full=True, publish=None):
@@ -123,10 +138,23 @@ class Service:
                 else:
                     vendors = payload["vendorData"]
                     if isinstance(result, NotPublished):
-                        previous = {k: v for k, v in vendors["sources"].get(name, {}).items() if k not in ("error", "attempted", "checked")}
-                        vendors["sources"][name] = {**previous, "notPublished": describe(result), "checked": int(now * 1000), "mode": "API cache"}
+                        previous = {
+                            k: v
+                            for k, v in vendors["sources"].get(name, {}).items()
+                            if k not in ("error", "attempted", "checked")
+                        }
+                        vendors["sources"][name] = {
+                            **previous,
+                            "notPublished": describe(result),
+                            "checked": int(now * 1000),
+                            "mode": "API cache",
+                        }
                     elif isinstance(result, Exception):
-                        vendors["sources"][name] = {**vendors["sources"].get(name, {}), "error": f"Vendor source unavailable: {describe(result)}", "attempted": int(now * 1000)}
+                        vendors["sources"][name] = {
+                            **vendors["sources"].get(name, {}),
+                            "error": f"Vendor source unavailable: {describe(result)}",
+                            "attempted": int(now * 1000),
+                        }
                     else:
                         evidence, source = result
                         vendors["evidence"].update(evidence)
@@ -188,7 +216,12 @@ def create_app(db_path=None, *, providers=None, clock=time.time, background=True
     @asynccontextmanager
     async def lifespan(app):
         cache = Cache(db_path or os.getenv("CACHE_DB", str(ROOT / "data" / "cache.sqlite3")))
-        async with httpx.AsyncClient(timeout=httpx.Timeout(60, connect=10), follow_redirects=True, limits=httpx.Limits(max_connections=20), headers={"User-Agent": "CVE-Desk/1.0"}) as client:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(60, connect=10),
+            follow_redirects=True,
+            limits=httpx.Limits(max_connections=20),
+            headers={"User-Agent": "CVE-Desk/1.0"},
+        ) as client:
             source = providers or Providers(client, clock)
             service = app.state.service = Service(cache, source, clock)
             service.prune()
@@ -215,7 +248,9 @@ def create_app(db_path=None, *, providers=None, clock=time.time, background=True
     app = FastAPI(title="CVE Desk", version="1.0", lifespan=lifespan)
     origins = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()]
     if origins:
-        app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["GET", "PUT"], allow_headers=["Content-Type"])
+        app.add_middleware(
+            CORSMiddleware, allow_origins=origins, allow_methods=["GET", "PUT"], allow_headers=["Content-Type"]
+        )
 
     @app.get("/api/tmds")
     async def tmds(response: Response):
@@ -237,7 +272,12 @@ def create_app(db_path=None, *, providers=None, clock=time.time, background=True
         return {"watched": len(entries), "unwatchedRetentionDays": 10}
 
     @app.get("/api/cves/{cve}")
-    async def case(response: Response, cve: str = APIPath(pattern=r"^CVE-\d{4}-\d{4,}$", max_length=32), families: str = Query("rhel,sles,debian,ubuntu,alpine", max_length=80), refresh: bool = False):
+    async def case(
+        response: Response,
+        cve: str = APIPath(pattern=r"^CVE-\d{4}-\d{4,}$", max_length=32),
+        families: str = Query("rhel,sles,debian,ubuntu,alpine", max_length=80),
+        refresh: bool = False,
+    ):
         selected = set(filter(None, families.split(",")))
         if not selected <= FAMILIES:
             raise HTTPException(422, "Unknown vendor family")
@@ -246,13 +286,18 @@ def create_app(db_path=None, *, providers=None, clock=time.time, background=True
         return result
 
     @app.get("/api/cves/{cve}/stream")
-    async def stream(cve: str = APIPath(pattern=r"^CVE-\d{4}-\d{4,}$", max_length=32), families: str = Query("", max_length=80), refresh: bool = False):
+    async def stream(
+        cve: str = APIPath(pattern=r"^CVE-\d{4}-\d{4,}$", max_length=32),
+        families: str = Query("", max_length=80),
+        refresh: bool = False,
+    ):
         selected = set(filter(None, families.split(",")))
         if not selected <= FAMILIES:
             raise HTTPException(422, "Unknown vendor family")
 
         async def events():
             queue = asyncio.Queue()
+
             async def run():
                 try:
                     result = await app.state.service.get(cve, selected, refresh, publish=queue.put_nowait)
@@ -264,6 +309,7 @@ def create_app(db_path=None, *, providers=None, clock=time.time, background=True
                     queue.put_nowait({"error": "Source lookup failed. Try again later.", "failed": True})
                 finally:
                     queue.put_nowait(None)
+
             task = asyncio.create_task(run())
             try:
                 while True:
@@ -274,7 +320,12 @@ def create_app(db_path=None, *, providers=None, clock=time.time, background=True
             finally:
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
-        return StreamingResponse(events(), media_type="application/x-ndjson", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+        return StreamingResponse(
+            events(),
+            media_type="application/x-ndjson",
+            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+        )
 
     if serve_frontend and os.getenv("SERVE_FRONTEND", "true").lower() == "true":
         # Explicit mounts keep the database, backend files and repository private.

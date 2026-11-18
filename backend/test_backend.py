@@ -2,14 +2,14 @@ import asyncio
 import json
 from pathlib import Path
 
-from fastapi.testclient import TestClient
 import httpx
 import pytest
+from fastapi.testclient import TestClient
 
-from backend.cache import Cache, RETENTION
 import backend.main
+from backend.cache import RETENTION, Cache
 from backend.main import Service, create_app
-from backend.providers import DEADLINES, NotPublished, PRODUCTS, Providers, csaf, describe, ubuntu, debian, alpine
+from backend.providers import DEADLINES, PRODUCTS, NotPublished, Providers, alpine, csaf, debian, describe, ubuntu
 
 CVE = "CVE-2026-98432"
 WORKSPACE = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
@@ -56,7 +56,9 @@ class FakeProviders:
             data, metadata = csaf(FIXTURE, cve, "sles")
         else:
             data, metadata = {"rhel9": []}, {}
-        return data, dict(url="https://vendor.example/source.json", checked=self.clock() * 1000, mode="API cache", **metadata)
+        return data, dict(
+            url="https://vendor.example/source.json", checked=self.clock() * 1000, mode="API cache", **metadata
+        )
 
 
 @pytest.fixture
@@ -158,8 +160,10 @@ def test_empty_failed_lookup_is_not_a_safe_result(setup):
 
 def test_cache_and_watches_survive_restart_and_startup_prunes_expired_data(setup):
     clock, providers, path = setup
+
     def app():
         return create_app(path, providers=providers, clock=clock, background=False)
+
     with TestClient(app()) as client:
         client.put(f"/api/workspaces/{WORKSPACE}/watches", json={"cases": [{"id": CVE, "families": []}]})
         client.get(f"/api/cves/{CVE}?families=")
@@ -174,6 +178,7 @@ def test_cache_and_watches_survive_restart_and_startup_prunes_expired_data(setup
 
 def test_concurrent_lookups_share_one_upstream_refresh(setup):
     clock, providers, path = setup
+
     async def run():
         cache = Cache(path)
         try:
@@ -182,6 +187,7 @@ def test_concurrent_lookups_share_one_upstream_refresh(setup):
             assert len(providers.calls) == 2
         finally:
             cache.close()
+
     asyncio.run(run())
 
 
@@ -213,7 +219,18 @@ def test_csaf_recommended_scope_major_versions_and_missing_cve():
 
 
 def test_distribution_semantics_are_preserved():
-    data = ubuntu({"id": CVE, "packages": [{"name": "linux", "statuses": [{"release_codename": "noble", "status": "pending", "description": "6.8.0"}]}]}, CVE)
+    data = ubuntu(
+        {
+            "id": CVE,
+            "packages": [
+                {
+                    "name": "linux",
+                    "statuses": [{"release_codename": "noble", "status": "pending", "description": "6.8.0"}],
+                }
+            ],
+        },
+        CVE,
+    )
     assert data["ubuntu2404"][0]["status"] == "affected"
     assert data["ubuntu2404"][0]["fix"] == []
     data = debian({"linux": {CVE: {"releases": {"bookworm": {"status": "resolved", "fixed_version": "0"}}}}}, CVE)
@@ -223,17 +240,22 @@ def test_distribution_semantics_are_preserved():
 
 def test_http_provider_shares_bulk_feeds_and_expires_memory_cache():
     clock, calls = Clock(), []
+
     async def handler(request):
         calls.append(str(request.url))
         return httpx.Response(200, json={"packages": []})
+
     async def run():
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             provider = Providers(client, clock)
-            await asyncio.gather(*(provider.get_json("https://secdb.alpinelinux.org/v3.22/main.json", shared=True) for _ in range(4)))
+            await asyncio.gather(
+                *(provider.get_json("https://secdb.alpinelinux.org/v3.22/main.json", shared=True) for _ in range(4))
+            )
             assert len(calls) == 1
             clock.now += 3600
             provider.prune()
             assert not provider.raw
+
     asyncio.run(run())
 
 
@@ -257,7 +279,10 @@ def test_full_cache_evicts_oldest_unwatched_entry(setup, monkeypatch):
             clock.now += 1
             assert client.get(f"/api/cves/{cve}?families=").status_code == 200
         assert sorted(cache.ids()) == ["CVE-2026-0001", "CVE-2026-0003"]
-        client.put(f"/api/workspaces/{WORKSPACE}/watches", json={"cases": [{"id": "CVE-2026-0001", "families": []}, {"id": "CVE-2026-0003", "families": []}]})
+        client.put(
+            f"/api/workspaces/{WORKSPACE}/watches",
+            json={"cases": [{"id": "CVE-2026-0001", "families": []}, {"id": "CVE-2026-0003", "families": []}]},
+        )
         assert client.get("/api/cves/CVE-2026-0004?families=").status_code == 429
 
 
@@ -302,11 +327,33 @@ def test_source_errors_are_short():
 def test_suse_cloud_images_are_excluded_from_os_rows():
     doc = {
         "document": {"csaf_version": "2.0", "references": []},
-        "product_tree": {"relationships": [
-            {"product_reference": "openssh", "relates_to_product_reference": "SUSE Linux Enterprise Server 15 SP6", "full_product_name": {"product_id": "sp6:openssh", "name": "openssh as component of SUSE Linux Enterprise Server 15 SP6"}},
-            {"product_reference": "openssh", "relates_to_product_reference": "SLES 15 SP5 CHOST Images for Google", "full_product_name": {"product_id": "img:openssh", "name": "openssh as component of SLES 15 SP5 CHOST Images for Google"}},
-        ]},
-        "vulnerabilities": [{"cve": CVE, "product_status": {"fixed": ["sp6:openssh"], "known_affected": ["img:openssh"]}, "remediations": []}],
+        "product_tree": {
+            "relationships": [
+                {
+                    "product_reference": "openssh",
+                    "relates_to_product_reference": "SUSE Linux Enterprise Server 15 SP6",
+                    "full_product_name": {
+                        "product_id": "sp6:openssh",
+                        "name": "openssh as component of SUSE Linux Enterprise Server 15 SP6",
+                    },
+                },
+                {
+                    "product_reference": "openssh",
+                    "relates_to_product_reference": "SLES 15 SP5 CHOST Images for Google",
+                    "full_product_name": {
+                        "product_id": "img:openssh",
+                        "name": "openssh as component of SLES 15 SP5 CHOST Images for Google",
+                    },
+                },
+            ]
+        },
+        "vulnerabilities": [
+            {
+                "cve": CVE,
+                "product_status": {"fixed": ["sp6:openssh"], "known_affected": ["img:openssh"]},
+                "remediations": [],
+            }
+        ],
     }
     data, metadata = csaf(doc, CVE, "sles")
     assert [e["status"] for e in data["sles15"]] == ["fixed"]
@@ -321,28 +368,33 @@ def test_progressive_sources_publish_before_slow_vendor(tmp_path):
     async def check():
         clock = Clock()
         gate = asyncio.Event()
+
         class Delayed(FakeProviders):
             async def vendor(self, family, cve):
-                if family == 'ubuntu':
+                if family == "ubuntu":
                     await gate.wait()
                 return await super().vendor(family, cve)
-        cache = Cache(tmp_path / 'progress.sqlite')
+
+        cache = Cache(tmp_path / "progress.sqlite")
         service = Service(cache, Delayed(clock), clock)
         snapshots = []
         ready = asyncio.Event()
+
         def publish(payload):
             snapshots.append(payload)
-            if payload.get('record'):
+            if payload.get("record"):
                 ready.set()
-        task = asyncio.create_task(service.get(CVE, {'rhel', 'ubuntu'}, publish=publish))
+
+        task = asyncio.create_task(service.get(CVE, {"rhel", "ubuntu"}, publish=publish))
         await asyncio.wait_for(ready.wait(), 1)
         assert not task.done()
-        assert 'ubuntu' not in snapshots[-1]['vendorData']['sources']
+        assert "ubuntu" not in snapshots[-1]["vendorData"]["sources"]
         gate.set()
         result = await task
-        assert 'ubuntu' in result['vendorData']['sources']
-        assert 'ubuntu' not in snapshots[0]['vendorData']['sources']
+        assert "ubuntu" in result["vendorData"]["sources"]
+        assert "ubuntu" not in snapshots[0]["vendorData"]["sources"]
         cache.close()
+
     asyncio.run(check())
 
 

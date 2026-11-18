@@ -87,7 +87,6 @@ Backend tests cover explicit/shared watches, ten-day expiry, rewatching, restart
 
 Sources: [CVE Program](https://www.cve.org/), [Red Hat VEX](https://security.access.redhat.com/data/csaf/v2/vex/), [SUSE CSAF/VEX](https://ftp.suse.com/pub/projects/security/csaf-vex/), [Ubuntu tracker](https://ubuntu.com/security/cves), [Debian tracker](https://security-tracker.debian.org/tracker), [Alpine secdb](https://secdb.alpinelinux.org/). Red Hat and SUSE source data are licensed under CC BY 4.0; the cache normalizes those documents. See [logo attribution](assets/logos/README.md) and [fixture attribution](tests/fixtures/README.md). No analytics. Optional Google Fonts fall back to system fonts offline.
 
-
 ## Case layout and progressive loading
 
 Settings controls default versions and OS ordering. Version pickers are collapsed independently of their selections; removing the last selection does not collapse a picker. Cases group results in collapsible OS sections. New vendor selections fetch data automatically. Refresh streams completed CVE/vendor areas over `/api/cves/<id>/stream` as newline-delimited JSON, while the existing snapshot endpoint remains available. Source errors preserve saved evidence. Missing evidence is **No data**; evidence without a conclusive assessment is **Inconclusive**.
