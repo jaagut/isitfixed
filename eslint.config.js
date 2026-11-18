@@ -9,6 +9,11 @@ export default [
     languageOptions: { globals: globals.browser },
   },
   {
+    // Classic (non-module) script loaded in <head> before the stylesheet.
+    files: ['src/theme.js'],
+    languageOptions: { sourceType: 'script' },
+  },
+  {
     files: ['tests/**/*.js', 'eslint.config.js'],
     languageOptions: { globals: globals.node },
   },

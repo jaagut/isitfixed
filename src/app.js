@@ -1,4 +1,4 @@
-import { hasCaseUpdate, recordUpdate, markCaseRead, sortedCases } from './cases.js';
+import { hasCaseUpdate, recordUpdate, markCaseRead, sortedCases, validTheme } from './cases.js';
 import { streamCase, syncWatches, fetchAgents } from './api.js';
 import {
   PRODUCTS,
@@ -72,7 +72,14 @@ function syncWatchlist(force = false) {
   return watchQueue;
 }
 
-let state = { version: 1, cases: [], products: ['rhel9', 'rhel10', 'debian12'], auto: true, activity: [] },
+let state = {
+    version: 1,
+    cases: [],
+    products: ['rhel9', 'rhel10', 'debian12'],
+    auto: true,
+    activity: [],
+    theme: 'system',
+  },
   active = null,
   busy = new Set();
 try {
@@ -105,9 +112,16 @@ function validate(s) {
     c.products = migrateProducts(c.products);
   }
   if (s.cvss !== undefined && !CVSS_VERSIONS.includes(s.cvss)) delete s.cvss;
+  s.theme = validTheme(s.theme);
   s.products = migrateProducts(s.products);
   return s;
 }
+// 'system' removes the attribute so the stylesheet follows prefers-color-scheme.
+function applyTheme() {
+  if (state.theme === 'system') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = state.theme;
+}
+applyTheme();
 function save() {
   try {
     localStorage.setItem(KEY, JSON.stringify(state));
@@ -1123,7 +1137,13 @@ $('#settings-button').onclick = () => {
   renderDefaults();
   $('#cvss-version').value = state.cvss || '3.1';
   $('#auto-refresh').checked = state.auto;
+  $('#theme').value = state.theme;
   $('#settings-dialog').showModal();
+};
+$('#theme').onchange = (e) => {
+  state.theme = validTheme(e.target.value);
+  applyTheme();
+  save();
 };
 $('#auto-refresh').onchange = (e) => {
   state.auto = e.target.checked;
@@ -1175,6 +1195,7 @@ $('#restore').onchange = async (e) => {
     if (busy.size) throw Error('Wait for running refreshes to finish before restoring.');
     state = next;
     active = null;
+    applyTheme();
     save();
     syncWatchlist();
     $('#settings-dialog').close();

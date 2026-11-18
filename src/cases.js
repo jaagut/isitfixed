@@ -20,3 +20,6 @@ export function sortedCases(state) {
     Math.max(c.updatedAt || 0, c.created || 0, ...state.activity.filter((a) => a.id === c.id).map((a) => a.time || 0));
   return [...state.cases].sort((a, b) => latest(b) - latest(a));
 }
+// Appearance setting: 'system' follows the OS; unknown values fall back to it.
+export const THEMES = ['system', 'light', 'dark'];
+export const validTheme = (theme) => (THEMES.includes(theme) ? theme : 'system');
