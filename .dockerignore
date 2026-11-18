@@ -9,13 +9,14 @@
 .pytest_cache
 **/__pycache__
 data
+dist
 *.sqlite3*
 node_modules
 tests
 backend/test_*.py
-package.json
-pnpm-lock.yaml
-pnpm-workspace.yaml
+backend/fixtures
+deploy
+docs
 eslint.config.js
 .prettierrc.json
 .prettierignore

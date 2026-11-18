@@ -6,10 +6,10 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-import backend.main
 from backend.cache import RETENTION, Cache
 from backend.main import Service, create_app
 from backend.providers import DEADLINES, PRODUCTS, NotPublished, Providers, alpine, csaf, debian, describe, ubuntu
+from backend.settings import Settings
 
 CVE = "CVE-2026-98432"
 WORKSPACE = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
@@ -61,6 +61,21 @@ class FakeProviders:
         )
 
 
+TEST_SETTINGS = dict(
+    manual_refresh=True,
+    rate_limit_requests=0,
+    rate_limit_lookups=0,
+    rate_limit_lookups_global=0,
+    rate_limit_watches=0,
+    admin_port=None,
+)
+
+
+def make_app(path, providers, clock, **overrides):
+    settings = Settings(**{**TEST_SETTINGS, **overrides})
+    return create_app(path, providers=providers, clock=clock, background=False, settings=settings)
+
+
 @pytest.fixture
 def setup(tmp_path):
     clock = Clock()
@@ -70,7 +85,7 @@ def setup(tmp_path):
 
 def test_api_cache_force_cooldown_and_validation(setup):
     clock, providers, path = setup
-    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+    with TestClient(make_app(path, providers, clock)) as client:
         assert client.get("/api/health").status_code == 200
         for url in ("/api/cves/invalid", f"/api/cves/{CVE}?families=http://evil", f"/api/cves/{CVE}?refresh=invalid"):
             assert client.get(url).status_code == 422
@@ -91,12 +106,12 @@ def test_api_cache_force_cooldown_and_validation(setup):
 
 def test_watched_cases_survive_closed_browsers_then_expire_after_unwatch(setup):
     clock, providers, path = setup
-    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+    with TestClient(make_app(path, providers, clock)) as client:
         watches = f"/api/workspaces/{WORKSPACE}/watches"
         assert client.put(watches, json={"cases": [{"id": CVE, "families": ["sles"]}]}).status_code == 200
         body = client.get(f"/api/cves/{CVE}?families=sles").json()
         assert body["cache"]["watched"] and body["cache"]["expiresAt"] is None
-        clock.now += 30 * 86400
+        clock.now += 29 * 86400  # Within the 30-day workspace inactivity limit.
         client.portal.call(client.app.state.service.tick)
         assert client.app.state.service.cache.get(CVE) is not None
         assert len(providers.calls) == 4  # Background refreshed while no browser requested it.
@@ -115,7 +130,7 @@ def test_watched_cases_survive_closed_browsers_then_expire_after_unwatch(setup):
 
 def test_last_workspace_removal_starts_timer_and_rewatch_cancels_it(setup):
     clock, providers, path = setup
-    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+    with TestClient(make_app(path, providers, clock)) as client:
         for workspace in (WORKSPACE, OTHER):
             client.put(f"/api/workspaces/{workspace}/watches", json={"cases": [{"id": CVE, "families": []}]})
         client.get(f"/api/cves/{CVE}?families=")
@@ -130,7 +145,7 @@ def test_last_workspace_removal_starts_timer_and_rewatch_cancels_it(setup):
 
 def test_watch_validation_rejects_notes_and_unknown_sources(setup):
     clock, providers, path = setup
-    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+    with TestClient(make_app(path, providers, clock)) as client:
         url = f"/api/workspaces/{WORKSPACE}/watches"
         for cases in ([{"id": CVE, "families": ["unknown"]}], [{"id": CVE, "notes": "private"}], [{"id": "bad"}]):
             assert client.put(url, json={"cases": cases}).status_code == 422
@@ -139,7 +154,7 @@ def test_watch_validation_rejects_notes_and_unknown_sources(setup):
 
 def test_source_failure_preserves_previous_evidence_and_timestamps(setup):
     clock, providers, path = setup
-    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+    with TestClient(make_app(path, providers, clock)) as client:
         url = f"/api/cves/{CVE}?families=sles&refresh=true"
         initial = client.get(url).json()
         providers.fail, clock.now = True, clock.now + 61
@@ -147,14 +162,16 @@ def test_source_failure_preserves_previous_evidence_and_timestamps(setup):
         assert failed["vendorData"]["evidence"] == initial["vendorData"]["evidence"]
         assert failed["vendorData"]["sources"]["sles"]["checked"] == initial["vendorData"]["sources"]["sles"]["checked"]
         assert failed["checked"] == initial["checked"]
-        assert "offline" in failed["error"]
-        assert "offline" in failed["vendorData"]["sources"]["sles"]["error"]
+        # Raw exception text never reaches the API; the category does.
+        assert failed["error"] == "CVE source unavailable: invalid data from source"
+        assert failed["vendorData"]["sources"]["sles"]["error"] == "Vendor source unavailable: invalid data from source"
+        assert "offline" not in json.dumps(failed)
 
 
 def test_empty_failed_lookup_is_not_a_safe_result(setup):
     clock, providers, path = setup
     providers.fail = True
-    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+    with TestClient(make_app(path, providers, clock)) as client:
         assert client.get(f"/api/cves/{CVE}?families=sles").status_code == 502
 
 
@@ -162,7 +179,7 @@ def test_cache_and_watches_survive_restart_and_startup_prunes_expired_data(setup
     clock, providers, path = setup
 
     def app():
-        return create_app(path, providers=providers, clock=clock, background=False)
+        return make_app(path, providers, clock)
 
     with TestClient(app()) as client:
         client.put(f"/api/workspaces/{WORKSPACE}/watches", json={"cases": [{"id": CVE, "families": []}]})
@@ -262,17 +279,16 @@ def test_http_provider_shares_bulk_feeds_and_expires_memory_cache():
 def test_unknown_cve_is_404_and_not_cached(setup):
     clock, providers, path = setup
     providers.unknown.add("CVE-2026-9999991")
-    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+    with TestClient(make_app(path, providers, clock)) as client:
         response = client.get("/api/cves/CVE-2026-9999991?families=debian,sles")
         assert response.status_code == 404
         assert "not found" in response.json()["detail"]
         assert client.app.state.service.cache.ids() == []
 
 
-def test_full_cache_evicts_oldest_unwatched_entry(setup, monkeypatch):
+def test_full_cache_evicts_oldest_unwatched_entry(setup):
     clock, providers, path = setup
-    monkeypatch.setattr(backend.main, "CAPACITY", 2)
-    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+    with TestClient(make_app(path, providers, clock, max_cached_cves=2, max_watched_cves=2)) as client:
         cache = client.app.state.service.cache
         client.put(f"/api/workspaces/{WORKSPACE}/watches", json={"cases": [{"id": "CVE-2026-0001", "families": []}]})
         for cve in ("CVE-2026-0001", "CVE-2026-0002", "CVE-2026-0003"):
@@ -289,7 +305,7 @@ def test_full_cache_evicts_oldest_unwatched_entry(setup, monkeypatch):
 def test_unpublished_vendor_document_is_not_an_outage(setup):
     clock, providers, path = setup
     providers.unpublished.add("sles")
-    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+    with TestClient(make_app(path, providers, clock)) as client:
         body = client.get(f"/api/cves/{CVE}?families=sles").json()
         source = body["vendorData"]["sources"]["sles"]
         assert "not published" in source["notPublished"] and "error" not in source and source["checked"]
@@ -298,7 +314,7 @@ def test_unpublished_vendor_document_is_not_an_outage(setup):
 
 def test_new_vendor_selection_fetches_only_that_vendor(setup):
     clock, providers, path = setup
-    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+    with TestClient(make_app(path, providers, clock)) as client:
         client.get(f"/api/cves/{CVE}?families=sles")
         attempted = client.app.state.service.cache.get(CVE)["attempted"]
         providers.calls.clear()
@@ -312,7 +328,7 @@ def test_slow_vendor_times_out_without_blocking_others(setup, monkeypatch):
     clock, providers, path = setup
     providers.slow.add("rhel")
     monkeypatch.setitem(DEADLINES, "rhel", 0.05)
-    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+    with TestClient(make_app(path, providers, clock)) as client:
         body = client.get(f"/api/cves/{CVE}?families=sles,rhel").json()
         assert body["vendorData"]["sources"]["rhel"]["error"] == "Vendor source unavailable: request timed out"
         assert body["vendorData"]["evidence"]["sles15"]
@@ -400,7 +416,7 @@ def test_progressive_sources_publish_before_slow_vendor(tmp_path):
 
 def test_case_links_serve_the_app_and_other_paths_stay_private(setup):
     clock, providers, path = setup
-    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+    with TestClient(make_app(path, providers, clock)) as client:
         for url in ("/CVE-2024-3094", "/cve-2024-3094"):
             response = client.get(url)
             assert response.status_code == 200 and "<script" in response.text

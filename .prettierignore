@@ -1,4 +1,5 @@
-# Generated lockfiles
+# Generated files
+dist/
 pnpm-lock.yaml
 uv.lock
 

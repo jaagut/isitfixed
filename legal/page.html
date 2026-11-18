@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="referrer" content="no-referrer" />
+    <title>{{title}}</title>
+    <link rel="icon" href="/assets/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="{{stylesheet}}" />
+  </head>
+  <body class="legal-page">
+    <header class="legal-header">
+      <a class="brand" href="/"><span class="brand-icon">c/</span> CVE Desk</a>
+    </header>
+    <main class="legal-content">{{content}}</main>
+    <footer class="site-footer">
+      <p>
+        CVE Desk is an informational tool. Data comes from public vendor sources and may be incomplete, delayed or
+        wrong. No warranty — use at your own discretion and verify with the vendor before acting. Not affiliated with or
+        endorsed by Red Hat, SUSE, Canonical, Debian, Alpine, Microsoft or Trend Micro.
+      </p>
+      <nav aria-label="Legal">
+        <!-- if:imprint_page --><a href="/imprint">Imprint</a> ·
+        <!-- endif:imprint_page -->
+        <!-- if:privacy_page --><a href="/privacy">Privacy</a> ·
+        <!-- endif:privacy_page -->
+        <a href="{{source_url}}" rel="noopener">Source code</a>
+      </nav>
+    </footer>
+  </body>
+</html>

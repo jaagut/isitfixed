@@ -7,29 +7,20 @@ import time
 
 import httpx
 
+from .errors import NotPublished, describe
+from .fetch import MIB, read_limited
+
+__all__ = ["DEADLINES", "FAMILIES", "HOUR", "PRODUCTS", "NotPublished", "Providers", "describe"]
+
 HOUR = 3600
 # Per-CVE documents should answer quickly; bulk feeds are large shared downloads.
 DEADLINES = {"record": 30, "rhel": 30, "sles": 30, "ubuntu": 30, "debian": 150, "alpine": 150}
+# Overall limits for one shared download, independent of how long any requester waits for it.
+DOCUMENT_DEADLINE, BULK_DEADLINE = 30, 150
+DOCUMENT_LIMIT = 128 * MIB
 # SUSE lists public-cloud container-host images alongside the OS. They are
 # separate products, so they are excluded from the SLES rows and counted instead.
 SUSE_IMAGE = re.compile(r"\bimages? for\b|\bCHOST\b", re.I)
-
-
-class NotPublished(Exception):  # noqa: N818 - a "not published" signal, not an error; the name is part of the API
-    """The source has no document for this CVE (HTTP 404)."""
-
-
-def describe(exc):
-    """Short, user-facing description of a source failure."""
-    if isinstance(exc, NotPublished):
-        return str(exc)
-    if isinstance(exc, httpx.HTTPStatusError):
-        return f"HTTP {exc.response.status_code} from {exc.request.url.host}"
-    if isinstance(exc, (TimeoutError, httpx.TimeoutException)):
-        return "request timed out"
-    if isinstance(exc, httpx.RequestError):
-        return f"connection failed ({exc.request.url.host})"
-    return str(exc) or type(exc).__name__
 
 
 FAMILIES = {"rhel", "sles", "debian", "ubuntu", "alpine"}
@@ -250,19 +241,18 @@ class Providers:
             return await asyncio.shield(self.pending[url])
 
         async def download():
-            async with self.client.stream("GET", url) as response:
-                response.raise_for_status()
-                data = bytearray()
-                async for part in response.aiter_bytes():
-                    data.extend(part)
-                    if len(data) > 128 * 1024 * 1024:
-                        raise ValueError("Vendor document exceeds 128 MiB")
+            # The deadline bounds the shared task itself, so a slow-drip server cannot keep it alive.
+            data = await read_limited(
+                self.client, url, limit=DOCUMENT_LIMIT, deadline=BULK_DEADLINE if shared else DOCUMENT_DEADLINE
+            )
             doc = await asyncio.to_thread(json.loads, data)
             if shared:
                 self.raw[url] = (doc, self.clock())
             return doc
 
         task = self.pending[url] = asyncio.create_task(download())
+        # Mark the outcome as retrieved even when every requester has already given up.
+        task.add_done_callback(lambda done: done.cancelled() or done.exception())
         try:
             return await asyncio.shield(task)
         finally:

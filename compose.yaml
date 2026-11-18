@@ -1,13 +1,66 @@
+# Local-first defaults: both ports bind to localhost only. See docs/deployment.md for public hosting.
 services:
   app:
     build: .
+    image: cve-desk:local
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8080:8080" # public app
+      - "127.0.0.1:8081:8081" # private admin dashboard (never expose publicly)
+    # Optional settings and secrets (e.g. ADMIN_TOKEN) go into a .env file next to this one; it is not committed.
+    env_file:
+      - path: .env
+        required: false
     environment:
       CACHE_DB: /data/cache.sqlite3
+      # Every variable below is optional; uncomment to override the default, or set it in .env.
+      # MANUAL_REFRESH: 'false'          # show "Refresh data" and accept refresh=true
+      # TMDS_ENABLED: 'true'             # Trend Micro Deep Security inventories
+      # ADMIN_PORT: '8081'               # empty or 0 disables the admin dashboard
+      # ADMIN_TOKEN: ''                  # require Bearer/Basic auth on the admin dashboard (prefer .env)
+      # SITE_URL: 'https://cve.example.com'
+      # SOURCE_URL: 'https://github.com/jaagut/cve-viewer'
+      # LEGAL_OPERATOR_NAME: 'Jane Doe'
+      # LEGAL_OPERATOR_ADDRESS: 'Example Street 1\n12345 Example Town\nGermany'
+      # LEGAL_OPERATOR_EMAIL: 'cve-desk@example.com'
+      # LEGAL_OPERATOR_PHONE: ''
+      # LEGAL_RESPONSIBLE_PERSON: ''
+      # LEGAL_HOSTING_PROVIDER: 'Example Hosting GmbH, Example Street 2, 12345 Example Town'
+      # LEGAL_DIR: /legal                # mount your own imprint.html / privacy.html fragments here
+      # FORWARDED_ALLOW_IPS: '127.0.0.1' # reverse proxies whose X-Forwarded-For is trusted
+      # HSTS: 'false'                    # normally set by the TLS reverse proxy
+      # CSP_CONNECT_SRC: ''              # extra API origins when the frontend is hosted elsewhere
+      # CORS_ORIGINS: ''
+      # RATE_LIMIT_REQUESTS: '240'       # all /api requests per client and minute
+      # RATE_LIMIT_LOOKUPS: '20'         # lookups that contact upstream sources, per client and minute
+      # RATE_LIMIT_LOOKUPS_GLOBAL: '120' # the same, for all clients together
+      # RATE_LIMIT_WATCHES: '12'         # watch-list syncs per client and minute
+      # MAX_WATCHED_CVES: '1000'
+      # MAX_CACHED_CVES: '1000'
+      # MAX_WATCHES_PER_WORKSPACE: '200'
+      # WORKSPACE_TTL_DAYS: '30'
+      # LOG_LEVEL: 'INFO'
+      # LOG_RETENTION_DAYS: '14'         # at most 14
+      # LOG_DIR: /data/logs              # empty: no log files
+      # API_DOCS: 'false'
     volumes:
-      - ./data:/data
+      - cve-desk-data:/data
+      # Disk-backed scratch space for agent archive downloads (up to ~350 MB while one is inspected).
+      - type: volume
+        target: /tmp
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1536m
+    cpus: 2
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
     healthcheck:
       test:
         - CMD
@@ -16,6 +69,10 @@ services:
         - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=5)"
       interval: 30s
       timeout: 10s
-      start_period: 15s
+      start_period: 20s
       retries: 3
     stop_grace_period: 30s
+
+volumes:
+  cve-desk-data:
+    name: cve-desk-data
