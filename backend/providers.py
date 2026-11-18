@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import re
 import sys
 import tempfile
@@ -11,12 +12,13 @@ from pathlib import Path
 import httpx
 
 from .errors import NotPublished, TooLarge, describe
-from .feedindex import alpine_index, debian_index
+from .feedindex import alpine_index, debian_advisory_index, debian_index
 from .fetch import MIB, Budget, download_to, read_limited
 
 __all__ = ["DEADLINES", "FAMILIES", "HOUR", "PRODUCTS", "NotPublished", "Providers", "describe"]
 
 HOUR = 3600
+logger = logging.getLogger("isitfixed.providers")
 # Per-CVE documents should answer quickly; bulk feeds are large shared downloads.
 DEADLINES = {"record": 30, "rhel": 30, "sles": 30, "ubuntu": 30, "debian": 150, "alpine": 150}
 # Overall limits for one shared download, independent of how long any requester waits for it.
@@ -32,10 +34,26 @@ ALPINE_LIMIT = 32 * MIB
 INDEX_LIMIT = 64 * MIB  # compact Debian index returned by the child process
 INDEXER = Path(__file__).with_name("feedindex.py")
 DEBIAN_URL = "https://security-tracker.debian.org/tracker/data/json"
+# Debian Security Advisories (stable) and Debian LTS Advisories (LTS releases, such as Debian 12 since June 2026):
+# the tracker's JSON has no advisory IDs, so they come from the tracker's own advisory lists (~1 MB each).
+DEBIAN_ADVISORY_URLS = tuple(
+    f"https://salsa.debian.org/security-tracker-team/security-tracker/-/raw/master/data/{kind}/list"
+    for kind in ("DSA", "DLA")
+)
+DEBIAN_ADVISORY_LIMIT = 16 * MIB
+DEBIAN_ADVISORY_PAGE = "https://security-tracker.debian.org/tracker/{}"
 ALPINE_URL = "https://secdb.alpinelinux.org/"
 # SUSE lists public-cloud container-host images alongside the OS. They are
 # separate products, so they are excluded from the SLES rows and counted instead.
 SUSE_IMAGE = re.compile(r"\bimages? for\b|\bCHOST\b", re.I)
+# Red Hat publishes this "workaround" when there is no usable mitigation; it is not a mitigation.
+NO_MITIGATION = re.compile(
+    r"^\s*Mitigation for this issue is either not available or the currently available options", re.I
+)
+# CSAF remediations that explain why an affected product has no fix: Red Hat "Will not fix", "Out of support
+# scope" (no_fix_planned), "Fix deferred" (none_available); SUSE "There is no fix planned for these products.".
+# Red Hat's plain none_available "Affected" only restates the status and is not kept.
+NO_FIX = ("no_fix_planned", "none_available")
 
 
 FAMILIES = {"rhel", "sles", "debian", "ubuntu", "alpine"}
@@ -141,10 +159,20 @@ def csaf(doc, cve, family):
                     mitigation=[
                         r["details"]
                         for r in rem
-                        if r.get("category") in ("mitigation", "workaround") and r.get("details")
+                        if r.get("category") in ("mitigation", "workaround")
+                        and r.get("details")
+                        and not NO_MITIGATION.match(r["details"])
                     ],
                     links=[r["url"] for r in fixes if r.get("url")],
                 )
+                if status == "affected" and (
+                    reasons := [
+                        " ".join(r["details"].split())
+                        for r in rem
+                        if r.get("category") in NO_FIX and r.get("details") and r["details"].strip() != "Affected"
+                    ]
+                ):
+                    item["note"] = "; ".join(dict.fromkeys(reasons))
                 if base == "recommended":
                     item["note"] = (
                         "Recommended patched build; vendor-fix remediation published."
@@ -165,9 +193,57 @@ def csaf(doc, cve, family):
     return result, metadata
 
 
+UBUNTU_PRO = {
+    "esm-infra": "Ubuntu Pro (ESM Infra)",
+    "esm-apps": "Ubuntu Pro (ESM Apps)",
+    "fips": "Ubuntu Pro FIPS",
+    "fips-updates": "Ubuntu Pro FIPS updates",
+    "fips-preview": "Ubuntu Pro FIPS preview",
+    "realtime": "Ubuntu Pro real-time kernel",
+    "soss": "Ubuntu Pro SOSS",
+}
+VERSION = re.compile(r"^\d[\w.:~+-]*$")
+
+
+def ubuntu_note(state, description, pocket):
+    """Short, plain-language note for one Ubuntu package status (see ubuntu.com/security/cves/about)."""
+    description = " ".join((description or "").split())
+    pro = UBUNTU_PRO.get(pocket or "")
+    if state == "released":
+        return f"Fix requires {pro}" if pro else ""
+    if state == "DNE":
+        return ""  # The package is not in this release.
+    if state == "not-affected":
+        if not description:
+            return ""
+        return f"Not affected in {description}" if VERSION.match(description) else f"Not affected: {description}"
+    if state == "needs-triage":
+        return "Not yet triaged by Ubuntu"
+    if state == "needed":
+        return "Vulnerable; no fix released yet"
+    if state == "pending":
+        return f"Fix pending{' in ' + description if description else ''}; not yet released"
+    if state == "deferred":
+        return f"Fix deferred by Ubuntu{' (' + description + ')' if description else ''}"
+    if state == "ignored":
+        return f"Ubuntu will not fix this{': ' + description if description else ''}"
+    return f"{state}{': ' + description if description else ''}"
+
+
 def ubuntu(doc, cve):
     if doc.get("id") != cve:
         raise ValueError("Ubuntu document does not match the CVE")
+    # Ubuntu Security Notices (USN) per release codename and source package.
+    notices = {}
+    for notice in doc.get("notices") or []:
+        nid = notice.get("id") if isinstance(notice, dict) else None
+        if not isinstance(nid, str) or not re.fullmatch(r"(?:USN|LSN)-\d+-\d+", nid):
+            continue
+        releases = notice.get("release_packages")
+        for codename, packages in releases.items() if isinstance(releases, dict) else ():
+            for package in packages if isinstance(packages, list) else []:
+                if isinstance(package, dict) and package.get("is_source", True) and package.get("name"):
+                    notices.setdefault((codename, package["name"]), []).append(nid)
     result = {}
     for product, (family, code) in PRODUCTS.items():
         if family != "ubuntu":
@@ -188,11 +264,13 @@ def ubuntu(doc, cve):
                     else "unknown"
                 )
                 item = evidence(package["name"], mapped, "Ubuntu security tracker")
-                item["note"] = (
-                    f"{state}{': ' + status['description'] if status.get('description') else ''}{' · ' + status['pocket'] if status.get('pocket') else ''}"
-                )
+                item["note"] = ubuntu_note(state, status.get("description"), status.get("pocket"))
                 if state == "released":
                     item["fix"] = [f"{package['name']} {status.get('description', '')}".strip()]
+                    item["links"] = [
+                        f"https://ubuntu.com/security/notices/{nid}"
+                        for nid in dict.fromkeys(notices.get((code, package["name"]), []))
+                    ]
                 items.append(item)
         if items and doc.get("mitigation"):
             items[0]["mitigation"] = [doc["mitigation"]]
@@ -204,14 +282,46 @@ def debian_codes():
     return [code for family, code in PRODUCTS.values() if family == "debian"]
 
 
-def debian_evidence(entries):
-    """Evidence per Debian product from the index entries ``[package, codename, status, fixed_version, nodsa]``."""
+def debian_note(state, nodsa, reason, urgency, point_update):
+    """Short, plain-language note for one Debian release status (see the security tracker's data/CVE/list)."""
+    nodsa = " ".join((nodsa or "").split())
+    detail = f" ({nodsa})" if nodsa else ""
+    if state == "undetermined":
+        return "Debian has not determined whether this release is affected"
+    if state != "open":
+        return ""
+    if point_update:
+        return f"Fix scheduled for the next point release{detail}"
+    if urgency == "end-of-life":
+        return "Not covered by Debian security support in this release"
+    if reason == "ignored":
+        return f"Debian will not fix this{detail}"
+    if reason == "postponed":
+        return f"Fix postponed to a later update{detail}"
+    if nodsa:
+        return f"No security advisory planned{detail}; may be fixed in a point release"
+    if urgency == "unimportant":
+        return "Rated unimportant by Debian; not fixed via security updates"
+    return ""
+
+
+def debian_evidence(entries, advisories=()):
+    """Evidence per Debian product from the index entries (see ``feedindex.debian_index``).
+
+    ``advisories`` are ``[advisory, codename, package, version]`` entries (``feedindex.debian_advisory_index``); one
+    links a fixed release when it shipped exactly that release's fixed version of the package.
+    """
+    shipped = {}
+    for advisory, codename, package, version in advisories:
+        shipped.setdefault((codename, package, version), []).append(advisory)
     result = {}
     for product, (family, code) in PRODUCTS.items():
         if family != "debian":
             continue
         items = []
-        for package, codename, state, version, nodsa in entries:
+        for entry in entries:
+            package, codename, state, version, nodsa = entry[:5]
+            reason, urgency, point_update = (list(entry[5:8]) + [None, None, False])[:3]
             if codename != code:
                 continue
             status = (
@@ -222,15 +332,24 @@ def debian_evidence(entries):
                 else "unknown"
             )
             item = evidence(package, status, "Debian security tracker")
-            item.update(fix=[f"{package} {version}"] if version and version != "0" else [], note=nodsa or "")
+            item.update(
+                fix=[f"{package} {version}"] if version and version != "0" else [],
+                note=debian_note(state, nodsa, reason, urgency, point_update),
+                links=[
+                    DEBIAN_ADVISORY_PAGE.format(advisory)
+                    for advisory in dict.fromkeys(shipped.get((codename, package, version), []))
+                ]
+                if status == "fixed"
+                else [],
+            )
             items.append(item)
         result[product] = items
     return result
 
 
-def debian(doc, cve):
+def debian(doc, cve, advisories=()):
     """Evidence from a full Debian tracker document (the app itself uses the compact index)."""
-    return debian_evidence(debian_index(doc, debian_codes()).get(cve, []))
+    return debian_evidence(debian_index(doc, debian_codes()).get(cve, []), advisories)
 
 
 def alpine_evidence(entries):
@@ -300,11 +419,34 @@ class Providers:
 
         async def download():
             async with asyncio.timeout(BULK_DEADLINE), self.bulk:
-                index = await (self._debian_index(url) if kind == "debian" else self._alpine_index(url))
+                index = await (
+                    self._debian_index(url)
+                    if kind == "debian"
+                    else self._advisory_index(url)
+                    if kind == "debian-advisories"
+                    else self._alpine_index(url)
+                )
             self.feeds[url] = (index, self.clock())
             return index
 
         return await self.shared(url, download)
+
+    async def _advisory_index(self, url):
+        with self.memory.hold() as take:
+            data = await read_limited(self.client, url, limit=DEBIAN_ADVISORY_LIMIT, take=take)
+            return await asyncio.to_thread(
+                lambda: debian_advisory_index(data.decode("utf-8", errors="replace"), debian_codes())
+            )
+
+    async def debian_advisories(self, cve):
+        """DSA/DLA entries for one CVE; the advisory lists are optional, so a failure only drops the links."""
+        found = []
+        for url in DEBIAN_ADVISORY_URLS:
+            try:
+                found += (await self.get_feed(url, "debian-advisories")).get(cve, [])
+            except Exception as error:  # noqa: BLE001 - evidence without advisory links is still correct
+                logger.warning("Debian advisory list unavailable (%s): %s", url, describe(error))
+        return found
 
     async def _alpine_index(self, url):
         with self.memory.hold() as take:
@@ -382,7 +524,7 @@ class Providers:
         elif family == "debian":
             url = DEBIAN_URL
             entries = (await self.get_feed(url, "debian")).get(cve)
-            result = debian_evidence(json.loads(entries) if entries else [])
+            result = debian_evidence(json.loads(entries) if entries else [], await self.debian_advisories(cve))
         elif family == "alpine":
             url, result = ALPINE_URL, {}
             for product, (group, version) in PRODUCTS.items():

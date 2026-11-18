@@ -325,7 +325,7 @@ def test_debian_feed_is_indexed_in_a_child_process(tmp_path):
                 ("zlib", "unaffected"),
             ]
             assert result["debian13"][0]["fix"] == ["linux 6.12.1"]
-            assert result["debian12"][1]["note"] == "Minor issue"
+            assert result["debian12"][1]["note"] == ""  # no-dsa only qualifies open issues
             index = provider.feeds["https://security-tracker.debian.org/tracker/data/json"][0]
             assert set(index) == {CVE} and isinstance(index[CVE], bytes)  # compact JSON per CVE, other releases dropped
             assert not list(tmp_path.iterdir())  # the spooled download is removed

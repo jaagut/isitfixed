@@ -54,12 +54,37 @@ def test_parse_reads_packages_kernels_marks_and_notes():
     assert page.platforms[("sles15", "x86_64")].kernels == [
         ("5.14.21-150500.33.69-azure", "azure", False),
         ("6.4.0-150700.53.31-default", "default", False),
+        # A grouped row (one build, a <div> per flavor) yields each flavor's own kernel name.
+        ("5.3.18-24.61-default", "default", False),
+        ("5.3.18-24.61-preempt", "preempt", False),
     ]
     assert ("6.12.38+deb13-cloud-amd64", "cloud", False) in page.platforms[("debian13", "x86_64")].kernels
     ubuntu = page.platforms[("ubuntu2404", "x86_64")]
-    assert ubuntu.kernels == [("6.8.0-31-generic", "generic", False), ("6.8.0-1068-azure", "azure", False)]
+    assert ubuntu.kernels == [
+        ("6.8.0-31-generic", "generic", False),
+        ("6.8.0-1068-azure", "azure", False),
+        ("6.17.0-1015-aws", "aws", False),
+        ("6.17.0-1015-azure", "azure", False),
+    ]
     assert ubuntu.package["download"] is None  # Links outside the official download path are dropped.
     assert page.platforms[("rhel8", "x86_64")].package is None  # Kernel table without a package row.
+
+
+def test_grouped_rows_match_each_flavor_column_to_its_kernel():
+    from backend.ksp import _flavor_kernels
+
+    # Real groups from the Ubuntu 20.04/22.04 and RHEL 8 tables: "fips" is not "aws-fips", "aws" is not "aws-fips".
+    names = ["5.4.0-1110-aws", "5.4.0-1110-fips", "5.4.0-1110-aws-fips", "5.4.0-1110-azure-fips"]
+    assert _flavor_kernels("5.4.0-1110", names, "fips") == ["5.4.0-1110-fips"]
+    assert _flavor_kernels("5.4.0-1110", names, "aws") == ["5.4.0-1110-aws"]
+    assert _flavor_kernels("5.4.0-1110", names, "azure-fips") == ["5.4.0-1110-azure-fips"]
+    cloud = ["4.18.0-477.21.1.el8_8.cloud.x86_64", "4.18.0-477.21.1.el8_8.cloud.0.1.x86_64"]
+    assert _flavor_kernels("4.18.0-477.21.1.el8_8", cloud, "cloud") == cloud
+    assert _flavor_kernels("3.12.74-60.64.118", ["3.12.74-60.64.118-default"] * 2, "default") == [
+        "3.12.74-60.64.118-default"
+    ]
+    assert _flavor_kernels("6.17.0-1015", ["6.17.0-1015-aws"], "gcp") == ["6.17.0-1015-aws"]  # single name: any column
+    assert _flavor_kernels("6.17.0-1015", ["6.17.0-1015-aws", "6.17.0-1015-azure"], "gcp") == []
 
 
 def test_parse_tolerates_whitespace_and_attribute_changes():

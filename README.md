@@ -130,15 +130,16 @@ Operators publish their own imprint and privacy policy; German templates with En
 
 ## Sources and licenses
 
-| Source                                                                      | Used for                                     | License / terms                                          |
-| --------------------------------------------------------------------------- | -------------------------------------------- | -------------------------------------------------------- |
-| [CVE Program](https://www.cve.org/) (cveawg.mitre.org)                      | CVE record, CNA statements, Microsoft builds | [CVE terms of use](https://www.cve.org/Legal/TermsOfUse) |
-| [Red Hat CSAF/VEX](https://security.access.redhat.com/data/csaf/v2/vex/)    | RHEL status, fixes, advisories               | CC BY 4.0                                                |
-| [SUSE CSAF/VEX](https://ftp.suse.com/pub/projects/security/csaf-vex/)       | SLES status, fixes, advisories               | CC BY 4.0                                                |
-| [Ubuntu CVE tracker](https://ubuntu.com/security/cves)                      | Ubuntu status and fixes                      | Canonical's terms                                        |
-| [Debian security tracker](https://security-tracker.debian.org/tracker)      | Debian status and fixes                      | Debian's terms                                           |
-| [Alpine secdb](https://secdb.alpinelinux.org/)                              | Alpine fixed versions                        | Alpine's terms                                           |
-| Trend Micro [download center feed][tm-feed] and [supported kernels][tm-ksp] | TMDS agent and Kernel Support Package lists  | Trend Micro's terms                                      |
+| Source                                                                                                     | Used for                                     | License / terms                                          |
+| ---------------------------------------------------------------------------------------------------------- | -------------------------------------------- | -------------------------------------------------------- |
+| [CVE Program](https://www.cve.org/) (cveawg.mitre.org)                                                     | CVE record, CNA statements, Microsoft builds | [CVE terms of use](https://www.cve.org/Legal/TermsOfUse) |
+| [Red Hat CSAF/VEX](https://security.access.redhat.com/data/csaf/v2/vex/)                                   | RHEL status, fixes, advisories               | CC BY 4.0                                                |
+| [SUSE CSAF/VEX](https://ftp.suse.com/pub/projects/security/csaf-vex/)                                      | SLES status, fixes, advisories               | CC BY 4.0                                                |
+| [Ubuntu CVE tracker](https://ubuntu.com/security/cves)                                                     | Ubuntu status, fixes and USN/LSN notices     | Canonical's terms                                        |
+| [Debian security tracker](https://security-tracker.debian.org/tracker)                                     | Debian status and fixes                      | Debian's terms                                           |
+| [Debian DSA/DLA lists](https://salsa.debian.org/security-tracker-team/security-tracker/-/tree/master/data) | Debian security advisories per fixed version | Debian's terms                                           |
+| [Alpine secdb](https://secdb.alpinelinux.org/)                                                             | Alpine fixed versions                        | Alpine's terms                                           |
+| Trend Micro [download center feed][tm-feed] and [supported kernels][tm-ksp]                                | TMDS agent and Kernel Support Package lists  | Trend Micro's terms                                      |
 
 [tm-feed]: https://s3.amazonaws.com/help-deepsecurity-trendmicro/Resources/CustomScripts/download-center/data/ds-dlc-feed-src/en-us/products_lts.json
 [tm-ksp]: https://files.trendmicro.com/documentation/guides/deep_security/Kernel%20Support/20.0/Deep_Security_20_0_kernels_EN.html

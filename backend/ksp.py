@@ -54,12 +54,14 @@ class _PageParser(HTMLParser):
         self.tables, self.lines = [], []
         self._heading_tag, self._heading_text = None, []
         self._table = self._row = self._cell = None
+        self._in_name = False
         self._depth = 0
         self._line = []
 
     def _end_cell(self):
         if self._cell is not None and self._row is not None:
-            self._row.append({**self._cell, "text": _clean(self._cell["text"])})
+            names = [name for parts in self._cell["names"] if (name := _clean(parts))]
+            self._row.append({**self._cell, "text": _clean(self._cell["text"]), "names": names})
         self._cell = None
 
     def _end_row(self):
@@ -91,9 +93,14 @@ class _PageParser(HTMLParser):
                 self._end_cell()
                 if self._row is None:
                     self._row = []
-                self._cell = {"tag": tag, "text": [], "links": [], "id": dict(attrs).get("id") or ""}
+                self._cell = {"tag": tag, "text": [], "links": [], "id": dict(attrs).get("id") or "", "names": []}
+                self._in_name = False
             elif tag == "a" and self._cell is not None and (href := dict(attrs).get("href")):
                 self._cell["links"].append(href)
+            elif tag == "div" and self._cell is not None:
+                # Grouped rows list each kernel of one build in a <div> inside <details>.
+                self._cell["names"].append([])
+                self._in_name = True
             return
         if self._depth:
             return
@@ -112,7 +119,9 @@ class _PageParser(HTMLParser):
                 self._table = None
             return
         if self._depth == 1:
-            if tag in ("td", "th"):
+            if tag == "div":
+                self._in_name = False
+            elif tag in ("td", "th"):
                 self._end_cell()
             elif tag == "tr":
                 self._end_row()
@@ -133,6 +142,8 @@ class _PageParser(HTMLParser):
         if self._depth:
             if self._cell is not None:
                 self._cell["text"].append(data)
+                if self._in_name and self._cell["names"]:
+                    self._cell["names"][-1].append(data)
             return
         if self._heading_tag:
             self._heading_text.append(data)
@@ -209,7 +220,11 @@ def _kernels(table, platforms):
     flavors = table["header"][1:]
     entry = platforms.setdefault((product, arch), Platform())
     for row in table["rows"]:
-        if not row or not KERNEL.match(row[0]["text"]):
+        if not row:
+            continue
+        first = row[0]
+        names = [name for name in first.get("names", []) if KERNEL.match(name)]
+        if not names and not KERNEL.match(first["text"]):
             continue
         for index, cell in enumerate(row[1:]):
             mark = cell["text"]
@@ -217,7 +232,27 @@ def _kernels(table, platforms):
                 continue
             flavor = flavors[index] if index < len(flavors) and flavors[index] else cell["id"]
             if flavor and (mark.startswith("Y") or PARTIAL_MARK in mark):
-                entry.kernels.append((row[0]["text"], flavor, PARTIAL_MARK in mark))
+                for kernel in _flavor_kernels(first["text"].split()[0], names, flavor) if names else [first["text"]]:
+                    entry.kernels.append((kernel, flavor, PARTIAL_MARK in mark))
+
+
+def _flavor_kernels(build, names, flavor):
+    """The kernels of a grouped row (one build, several flavors) that a flavor column refers to.
+
+    Names start with the row's build (the <summary>) and differ in their flavor suffix ("5.15.0-198-generic",
+    "5.15.0-198-fips", "5.15.0-1120-aws-fips", "4.18.0-477.21.1.el8_8.cloud.x86_64"): an exact suffix match wins,
+    then a suffix that contains the flavor as a token; a group with a single distinct name belongs to every column.
+    """
+    names = list(dict.fromkeys(names))
+    suffixes = {name: (name[len(build) :] if name.startswith(build) else name).strip("-.+") for name in names}
+    exact = [name for name, suffix in suffixes.items() if suffix == flavor]
+    if exact:
+        return exact
+    token = re.compile(rf"(?:^|[-.+]){re.escape(flavor)}(?:$|[-.+])")
+    found = [name for name, suffix in suffixes.items() if token.search(suffix)]
+    if found:
+        return found
+    return names if len(names) == 1 else []
 
 
 def parse(html):

@@ -1,0 +1,131 @@
+{
+ "sqlite3": {
+  "CVE-2026-119373": {
+   "scope": "local",
+   "releases": {
+    "bookworm": {
+     "status": "open",
+     "repositories": {
+      "bookworm": "3.40.1-2+deb12u2"
+     },
+     "urgency": "not yet assigned"
+    },
+    "forky": {
+     "status": "resolved",
+     "repositories": {
+      "forky": "3.54.1-2"
+     },
+     "fixed_version": "3.54.1-1",
+     "urgency": "not yet assigned"
+    },
+    "sid": {
+     "status": "resolved",
+     "repositories": {
+      "sid": "3.54.1-2"
+     },
+     "fixed_version": "3.54.1-1",
+     "urgency": "not yet assigned"
+    },
+    "trixie": {
+     "status": "open",
+     "repositories": {
+      "trixie": "3.46.1-7+deb13u2"
+     },
+     "urgency": "not yet assigned",
+     "nodsa": "Minor issue",
+     "nodsa_reason": ""
+    }
+   }
+  }
+ },
+ "7zip": {
+  "CVE-2026-104086": {
+   "releases": {
+    "bookworm": {
+     "status": "open",
+     "repositories": {
+      "bookworm": "22.01+really26.01+dfsg-0+deb12u1",
+      "bookworm-security": "22.01+really26.02+dfsg-0+deb12u1"
+     },
+     "urgency": "unimportant"
+    }
+   },
+   "scope": "local"
+  },
+  "CVE-2026-125742": {
+   "releases": {
+    "bookworm": {
+     "status": "open",
+     "repositories": {
+      "bookworm": "22.01+really26.01+dfsg-0+deb12u1",
+      "bookworm-security": "22.01+really26.02+dfsg-0+deb12u1"
+     },
+     "urgency": "not yet assigned",
+     "nodsa": "Minor issue, revisit when spu is ready",
+     "nodsa_reason": "postponed"
+    }
+   },
+   "scope": "local"
+  },
+  "CVE-2026-58052": {
+   "releases": {
+    "bookworm": {
+     "status": "open",
+     "repositories": {
+      "bookworm": "22.01+really26.01+dfsg-0+deb12u1",
+      "bookworm-security": "22.01+really26.02+dfsg-0+deb12u1"
+     },
+     "urgency": "not yet assigned",
+     "nodsa": "Only affects Windows NTFS with transparent ADS and :$DATA canonicalization, i.e. not the current ntfs-3g",
+     "nodsa_reason": "ignored"
+    }
+   },
+   "scope": "local"
+  }
+ },
+ "adplug": {
+  "CVE-2026-110875": {
+   "releases": {
+    "bookworm": {
+     "status": "undetermined",
+     "repositories": {
+      "bookworm": "2.3.3+dfsg-2"
+     },
+     "urgency": "not yet assigned"
+    }
+   },
+   "scope": "local"
+  }
+ },
+ "dnsdist": {
+  "CVE-2026-0396": {
+   "releases": {
+    "bookworm": {
+     "status": "open",
+     "repositories": {
+      "bookworm": "1.7.3-2"
+     },
+     "urgency": "end-of-life"
+    }
+   },
+   "scope": "local"
+  }
+ },
+ "flask": {
+  "CVE-2026-27205": {
+   "releases": {
+    "bookworm": {
+     "status": "open",
+     "repositories": {
+      "bookworm": "2.2.2-3"
+     },
+     "urgency": "not yet assigned",
+     "nodsa": "Minor issue",
+     "nodsa_reason": "",
+     "next_point_update": true
+    }
+   },
+   "scope": "local"
+  }
+ }
+}
