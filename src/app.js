@@ -23,6 +23,7 @@ import {
   selectedSearchFilter,
   searchFilterLabel,
   searchRelevance,
+  toggleSearchFilter,
 } from './search.js';
 import { ago, esc, icons, time, HOUR } from './util.js';
 import {
@@ -870,11 +871,13 @@ filterOptions.onclick = (e) => {
   const button = e.target.closest('[data-search-token]');
   if (!button) return;
   const input = $('#search');
-  // Choosing the active option again removes that filter.
-  const token = button.getAttribute('aria-pressed') === 'true' ? '' : button.dataset.searchToken;
-  input.value = replaceSearchFilter(input.value, searchField, token);
+  const token = button.dataset.searchToken;
+  // Options toggle, so several values of one filter can be combined; "All …" clears the filter.
+  // The panel stays open for further choices.
+  input.value = token ? toggleSearchFilter(input.value, token) : replaceSearchFilter(input.value, searchField);
   updateSearch();
-  hideSearchOptions(true);
+  renderSearchOptions();
+  filterOptions.querySelector(`[data-search-token="${token}"]`)?.focus();
 };
 filterPanel.onkeydown = (e) => {
   const buttons = [...filterOptions.querySelectorAll('button')];

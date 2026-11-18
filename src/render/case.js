@@ -152,15 +152,15 @@ export function choices(state, ids, sortable = false) {
 }
 
 function productsSection(c, ctx) {
-  const rows = groupRows(c, ctx) || '<p class="empty-row">Select products to start assessing this case.</p>';
+  const rows = groupRows(c, ctx) || '<p class="empty-row">Choose OS versions to start assessing this case.</p>';
   // One panel: the chooser toggle is its top row and the chooser unfolds inside it, above the OS rows.
   return [
     '<section class="products-section">',
     '<div class="section-heading">',
-    `<h2>Operating systems <span class="count">${c.products.length}</span></h2>`,
+    '<h2>Operating systems</h2>',
     '</div>',
     '<div class="panel product-table">',
-    `<button type="button" id="edit-products" class="chooser-toggle" aria-expanded="${ctx.chooserOpen}" aria-controls="case-products">${icons.chevron}Choose OS versions</button>`,
+    `<button type="button" id="edit-products" class="chooser-toggle" aria-expanded="${ctx.chooserOpen}" aria-controls="case-products">${icons.chevron}Choose OS versions <span class="count" aria-label="${plural(c.products.length, 'version')} selected">${c.products.length}</span></button>`,
     `<div id="case-products" class="product-choices" ${ctx.chooserOpen ? '' : 'hidden'}>${choices(ctx.state, c.products)}</div>`,
     unlistedNote(c, ctx),
     rows,

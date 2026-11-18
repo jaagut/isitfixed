@@ -52,6 +52,7 @@
   --brand-icon: #eaf3dc;
   --focus: #9ab9a5;
   --accent-soft: #e5efe4;
+  --bar-line: #ffffffcc;
   --accent-text: #1f4a39;
   --accent-border: #b9cfbd;
 
@@ -207,6 +208,7 @@
 
   --accent: #2f6e53;
   --accent-soft: #1f3a2e;
+  --bar-line: #00000080;
   --accent-text: #b8e2c6;
   --accent-border: #33594a;
   --accent-hover: #387e60;
@@ -349,6 +351,7 @@
 
     --accent: #2f6e53;
     --accent-soft: #1f3a2e;
+    --bar-line: #00000080;
     --accent-text: #b8e2c6;
     --accent-border: #33594a;
     --accent-hover: #387e60;
@@ -1307,7 +1310,6 @@ span.product-name {
 .status-bar {
   display: flex;
   align-items: flex-end;
-  gap: 2px;
   min-width: 0;
 }
 .status-seg {
@@ -1332,14 +1334,32 @@ span.product-name {
 }
 .seg-fill {
   height: 4px;
+  /* Equal 1px lines at the start of every slot (one per OS version), also between statuses. */
+  background:
+    linear-gradient(90deg, var(--bar-line) 1px, transparent 0) 0 0 / calc(100% / var(--n)) 100%,
+    var(--seg);
+  transition: height 140ms ease;
+}
+.status-seg:first-child .seg-fill {
+  background-position-x: -1px;
+  border-radius: 2px 0 0 2px;
+}
+.status-seg:last-child .seg-fill {
+  border-radius: 0 2px 2px 0;
+}
+.status-seg:only-child .seg-fill {
   border-radius: 2px;
-  /* One slot per OS version: a 1px gap closes each slot (the last one is the segment's edge). */
-  background: linear-gradient(90deg, var(--seg) calc(100% - 1px), transparent 0) 0 0 / calc(100% / var(--n)) 100%;
-  transition:
-    height 140ms ease,
-    border-radius 140ms ease;
 }
 /* Collapsed logos keep their width (so segments never jump) but no height. */
+.status-seg + .status-seg .seg-logos {
+  box-shadow: inset 1px 0 0 var(--bar-line);
+}
+.status-seg:first-child .seg-logos {
+  border-top-left-radius: 6px;
+}
+.status-seg:last-child .seg-logos {
+  border-top-right-radius: 6px;
+}
 .seg-logos {
   position: relative;
   display: flex;
@@ -1347,7 +1367,6 @@ span.product-name {
   justify-content: space-around;
   max-height: 0;
   padding: 0;
-  border-radius: 6px 6px 0 0;
   background: color-mix(in srgb, var(--seg) 22%, transparent);
   opacity: 0;
   visibility: hidden;
@@ -1383,7 +1402,6 @@ span.product-name {
 .home-case-entry:has(:focus-visible) .seg-fill,
 .status-meter.expanded .seg-fill {
   height: 5px;
-  border-radius: 0 0 2px 2px;
   transition-delay: 120ms;
 }
 .status-meter.expanded .seg-logos,
@@ -1398,22 +1416,18 @@ span.product-name {
   min-width: 2px;
   height: 16px;
 }
-.stack-logo:hover {
-  z-index: 1;
-}
+
 .stack-logo .vendor-logo {
   width: 13px;
   height: 13px;
 }
 /* Instant tooltips: the version on a logo, the status name elsewhere on its tint. */
-.seg-logos[data-tip]:hover:not(:has(.stack-logo:hover))::after,
-.stack-logo[data-tip]:hover::after {
+.seg-logos[data-tip]:hover::after {
   content: attr(data-tip);
   position: absolute;
   z-index: 2;
   bottom: calc(100% + 5px);
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
   padding: 3px 7px;
   border-radius: 5px;
   font: 600 10px/1.4 var(--font-sans);
@@ -1423,10 +1437,7 @@ span.product-name {
   box-shadow: var(--shadow-actions);
   pointer-events: none;
 }
-.seg-logos[data-tip]:hover:not(:has(.stack-logo:hover))::after {
-  left: 0;
-  transform: none;
-}
+
 /* The sidebar's check time appears below the bar while the card is open. */
 .status-checked {
   display: block;
@@ -1703,6 +1714,12 @@ span.product-name {
   color: var(--text-muted);
 }
 /* The OS panel's top row toggles the version chooser, which unfolds inside the same panel. */
+.product-table {
+  overflow: clip;
+}
+.chooser-toggle .count {
+  margin-left: 2px;
+}
 .chooser-toggle {
   display: flex;
   justify-content: flex-start;
@@ -1795,7 +1812,7 @@ span.product-name {
 .version-all {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   cursor: pointer;
   font-size: 11px;
   font-weight: 550;
@@ -1817,16 +1834,27 @@ span.product-name {
   border-color: var(--accent);
   color: var(--on-accent);
 }
-.version-chip input:checked + span {
-  padding-left: 4px;
+/* Every chip has the same indicator slot: an empty ring when off, a tick when on, so checking a
+   chip changes neither its width nor the text position. */
+.version-chip span::before {
+  content: '';
+  display: inline-grid;
+  place-items: center;
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  opacity: 0.55;
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 1;
 }
-/* The tick (4px gap + 8px) replaces 8px of padding: checking a chip never changes its width. */
 .version-chip input:checked + span::before {
   content: '✓';
-  width: 8px;
-  margin-right: -4px;
-  font-size: 10px;
-  text-align: center;
+  border-color: transparent;
+  background: var(--on-accent);
+  color: var(--accent);
+  opacity: 1;
 }
 /* "All" quick toggle: an outlined chip, filled while every version is selected. */
 .version-all {

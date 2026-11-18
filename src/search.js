@@ -29,12 +29,30 @@ const tokens = (query) => query.match(/(?:[^\s"]+|"[^"]*(?:"|$))+/g) || [];
 const fieldToken = /^(os|version|status):(.*)$/i;
 const same = (entry, value) => entry.names.includes(normalize(value));
 
-// Picker changes replace positive filters in the chosen group. Typed exclusions stay intact.
+// The OS family and version qualifiers form one picker group; values in a group are alternatives.
+const GROUPS = { os: ['os', 'version'], status: ['status'] };
+const groupOf = (field) => (field === 'status' ? 'status' : 'os');
+
+// Replaces the positive filters of a picker group (none: clears it). Typed exclusions stay intact.
 export function replaceSearchFilter(query, group, value = '') {
-  const fields = group === 'os' ? ['os', 'version'] : ['status'];
+  const fields = GROUPS[group];
   const remaining = tokens(query).filter((word) => !fields.includes(word.match(fieldToken)?.[1].toLowerCase()));
   if (value) remaining.push(value);
   return remaining.join(' ');
+}
+
+// Adds a picker value to the query, or removes it when it is already there.
+export function toggleSearchFilter(query, token) {
+  const [field, id] = token.split(':');
+  if (!selectedSearchFilter(query, field, id)) return [...tokens(query), token].join(' ');
+  const matches = (word) => {
+    const match = word.match(fieldToken);
+    if (match?.[1].toLowerCase() !== field) return false;
+    return options.some((o) => o.field === field && o.id === id && same(o, match[2].replaceAll('"', '')));
+  };
+  return tokens(query)
+    .filter((word) => !matches(word))
+    .join(' ');
 }
 
 export function selectedSearchFilter(query, field, id) {
@@ -45,25 +63,26 @@ export function selectedSearchFilter(query, field, id) {
   });
 }
 
-// Short label of the positive filter chosen in a picker group ("RHEL 9", "Affected"), or ''.
+// Short label of a picker group's positive filters ("RHEL 9", "Affected +1"), or ''.
 export function searchFilterLabel(query, group) {
-  const fields = group === 'os' ? ['os', 'version'] : ['status'];
+  const labels = [];
   for (const word of tokens(query)) {
     const match = word.match(fieldToken);
     const field = match?.[1].toLowerCase();
-    if (!fields.includes(field)) continue;
+    if (!GROUPS[group].includes(field)) continue;
     const found = options.find((o) => o.field === field && same(o, match[2].replaceAll('"', '')));
-    if (found) return found.short || found.label;
+    if (found) labels.push(found.short || found.label);
   }
-  return '';
+  return labels.length > 1 ? `${labels[0]} +${labels.length - 1}` : labels[0] || '';
 }
 
-// Positive row filters must all match the same selected OS version.
+// A selected OS version must match every filter group; values within a group are alternatives
+// (version:rhel8 version:rhel9 matches either).
 export function matchesCase(c, query) {
   const words = tokens(query);
   if (!words.length) return true;
   const products = PRODUCTS.filter((p) => c.products?.includes(p.id));
-  const rowFilters = [];
+  const rowFilters = {};
   let text;
   for (const word of words) {
     const negative = word.startsWith('-') && word.length > 1;
@@ -93,9 +112,10 @@ export function matchesCase(c, query) {
     };
     if (negative) {
       if (products.some(matches)) return false;
-    } else rowFilters.push(matches);
+    } else (rowFilters[groupOf(key)] ??= []).push(matches);
   }
-  return !rowFilters.length || products.some((p) => rowFilters.every((filter) => filter(p)));
+  const groups = Object.values(rowFilters);
+  return !groups.length || products.some((p) => groups.every((group) => group.some((filter) => filter(p))));
 }
 
 // Use with a stable descending sort after matching, so equally relevant cases keep their activity order.

@@ -6,6 +6,7 @@ import {
   selectedSearchFilter,
   searchRelevance,
   searchFilterLabel,
+  toggleSearchFilter,
 } from '../src/search.js';
 import { statusBar } from '../src/render/common.js';
 
@@ -32,6 +33,21 @@ test('plain search finds case details, package evidence, selected versions and a
     assert.equal(matchesCase(c, query), true, query);
   assert.equal(matchesCase(c, 'missing'), false);
   assert.ok(searchRelevance(c, 'kernel') > searchRelevance(c, 'cluster'));
+});
+
+test('values of one filter group are alternatives and can be toggled on and off', () => {
+  assert.equal(matchesCase(c, 'version:rhel8 version:rhel9'), true);
+  assert.equal(matchesCase(c, 'version:rhel8 version:sles15'), false);
+  // OS family and version are one group: either may match.
+  assert.equal(matchesCase(c, 'os:sles version:ubuntu2404'), true);
+  // Groups still combine on the same row: Ubuntu 24.04 is the only fixed row.
+  assert.equal(matchesCase(c, 'version:rhel9 version:ubuntu2404 status:fixed'), true);
+  assert.equal(matchesCase(c, 'version:rhel9 status:fixed'), false);
+  let q = toggleSearchFilter('kernel', 'version:rhel9');
+  q = toggleSearchFilter(q, 'version:rhel10');
+  assert.equal(q, 'kernel version:rhel9 version:rhel10');
+  assert.equal(searchFilterLabel(q, 'os'), 'RHEL 9 +1');
+  assert.equal(toggleSearchFilter('kernel version:9 version:rhel10', 'version:rhel9'), 'kernel version:rhel10');
 });
 
 test('filter pills name the chosen OS family, version or status', () => {
@@ -61,7 +77,10 @@ test('status bar has one segment per status with a logo per OS version on top, i
   // "No data" (RHEL 9, RHEL 10, Debian 13) is left out while another status is known.
   const segments = [...bar.matchAll(/class="status-seg ([a-z_]+)" data-flex="(\d+)"/g)].map((m) => [m[1], m[2]]);
   assert.deepEqual(segments, [['fix_available', '1']]);
-  assert.match(bar, /aria-label="Fix available: Ubuntu 24.04"><span class="seg-logos" data-tip="Fix available">/);
+  assert.match(
+    bar,
+    /aria-label="Fix available: Ubuntu 24.04"><span class="seg-logos" data-tip="Fix available · Ubuntu 24.04">/,
+  );
   assert.match(bar, /<\/span><span class="seg-fill"><\/span><\/span>/);
   assert.doesNotMatch(bar, /OS version/);
   assert.match(bar, /data-checked-at="1234"/);
@@ -71,8 +90,5 @@ test('status bar has one segment per status with a logo per OS version on top, i
   // With nothing else known, "No data" is shown: one logo per version, no counts.
   const unknown = statusBar({ ...c, products: ['rhel9', 'rhel10'], vendorData: undefined });
   assert.match(unknown, /class="status-seg unknown" data-flex="2"/);
-  assert.match(
-    unknown,
-    /data-tip="RHEL 9"><img[^>]*logo-rhel[^>]*><\/span><span class="stack-logo" data-tip="RHEL 10">/,
-  );
+  assert.match(unknown, /data-tip="No data · RHEL 9, RHEL 10"><span class="stack-logo"><img[^>]*logo-rhel/);
 });
