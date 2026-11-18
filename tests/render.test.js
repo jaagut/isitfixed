@@ -108,14 +108,20 @@ test('header: refresh only when the server allows it; status line links to Sourc
   assert.doesNotMatch(html, /class="freshness"/);
 });
 
-test('advisories move to the assessment source line; mitigations show their source', () => {
+test('version shows its status and advisories without redundant vendor links; mitigations retain sources', () => {
   const html = renderCase(c, ctx());
   assert.doesNotMatch(html, /fact-label">Advisor/);
   assert.match(
     html,
-    /Source: <a [^>]*>Red Hat VEX ↗<\/a> · Advisories: <a [^>]*>RHSA-2024:2394 ↗<\/a>, <a [^>]*>RHSA-2024:3138 ↗<\/a> <span class="fact-more">\+1<\/span>/,
+    /Advisories: <a [^>]*>RHSA-2024:2394 ↗<\/a>, <a [^>]*>RHSA-2024:3138 ↗<\/a> <span class="fact-more">\+1<\/span>/,
   );
   assert.match(html, /All 3 advisories/);
+  assert.doesNotMatch(html, /<span>ASSESSMENT<\/span>|class="assessment-source"/);
+  assert.match(html, /class="product-name"><strong>[^<]+<\/strong><div class="assessment"><span class="status /);
+  const version = html.match(/class="product-name">([\s\S]*?)<div class="fix-summary">/)[1];
+  assert.doesNotMatch(version, /Red Hat VEX ↗|>Red Hat ↗<\/a>|Source:/);
+  assert.match(html, /TMDS Kernel Support Packages/);
+  assert.match(html, /Vendor data/);
   assert.match(
     html,
     /Blacklist the nf_tables module\.<\/p><p class="fact-source">Source: <a href="https:\/\/security\.access\.redhat\.com\/data\/csaf\/v2\/vex\/2024\/cve-2024-1086\.json"/,

@@ -13,6 +13,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
+from .main import STALL_AFTER
 from .security import SecurityHeaders
 from .stats import WINDOWS
 
@@ -36,7 +37,8 @@ class ProcessSampler:
     """CPU usage between two dashboard requests (since process start for the first one)."""
 
     def __init__(self):
-        self.wall, self.cpu = time.monotonic(), 0.0
+        times = os.times()
+        self.wall, self.cpu = time.monotonic(), times.user + times.system
 
     def sample(self):
         times = os.times()
@@ -91,6 +93,7 @@ def collect(state, sampler):
     }
     return {
         "version": settings.version,
+        "hourly": stats.hourly(),
         "startedAt": int(state.started * 1000),
         "uptimeSeconds": int(now - state.started),
         "flags": {
@@ -153,7 +156,14 @@ def collect(state, sampler):
         "process": sampler.sample(),
         "container": container_memory(),
         "storage": storage(state.cache.path, settings.log_dir),
-        "workers": {name: {"heartbeatAgeSeconds": age, "stopped": done} for name, (age, done) in workers.items()},
+        "workers": {
+            name: {
+                "heartbeatAgeSeconds": age,
+                "stopped": done,
+                "stalled": done or (age is not None and age > STALL_AFTER[name]),
+            }
+            for name, (age, done) in workers.items()
+        },
     }
 
 
@@ -180,6 +190,65 @@ def _table(headers, rows):
     head = "".join(f"<th>{html.escape(str(h))}</th>" for h in headers)
     body = "".join("<tr>" + "".join(f"<td>{html.escape(str(c))}</td>" for c in row) + "</tr>" for row in rows)
     return f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
+
+
+CHARTS = (
+    ("refreshes", "Case refreshes"),
+    ("fetches", "Upstream fetches"),
+    ("failures", "Upstream failures"),
+    ("rateLimited", "Rate-limited requests"),
+)
+
+
+def _chart(rows, key, title):
+    values = [row[key] for row in rows]
+    peak = max(values)
+    total = sum(values)
+    if peak:
+        bars = []
+        for i, (row, value) in enumerate(zip(rows, values, strict=True)):
+            height = 64 * value / peak
+            hour = time.strftime("%H:00 UTC", time.gmtime(row["hourUtc"]))
+            bars.append(
+                f"<rect x='{i * 10}' y='{64 - height:.2f}' width='8' height='{height:.2f}'>"
+                f"<title>{hour} · {value}</title></rect>"
+            )
+        graph = (
+            f"<svg role='img' aria-label='{title} by UTC hour, peak {peak}' viewBox='0 0 240 65'>"
+            + "".join(bars)
+            + "</svg>"
+        )
+    else:
+        graph = "<p class='empty'>No events recorded</p>"
+    first, last = (time.strftime("%H:00", time.gmtime(row["hourUtc"])) for row in (rows[0], rows[-1]))
+    return (
+        f"<figure><figcaption>{title}</figcaption><strong>{total:,}</strong>{graph}"
+        f"<div class='scale'><span>{first}</span><span>Peak {peak:,}/h</span><span>{last}</span></div></figure>"
+    )
+
+
+def _status(data):
+    workers = data["workers"]
+    stalled = [name for name, worker in workers.items() if worker["stalled"]]
+    failing = [name for name, source in data["sources"].items() if source["consecutiveFailures"]]
+    status = "Stalled" if stalled else "Degraded" if failing else "Healthy"
+    cpu = data["process"]["cpuPercent"]
+    container = data["container"]
+    memory = _size(container["memoryBytes"])
+    if container["memoryLimitBytes"] is not None:
+        memory += " / " + _size(container["memoryLimitBytes"])
+    metrics = [
+        (
+            "Workers",
+            ", ".join(stalled) + " stalled" if stalled else f"{len(workers)} running" if workers else "Disabled",
+        ),
+        ("Upstream sources", ", ".join(failing) + " failing" if failing else "No failures reported"),
+        ("Process CPU", f"{cpu}%" if cpu is not None else "Unavailable"),
+        ("Container memory", memory),
+        ("Data volume free", _size((data["storage"]["dataDisk"] or {}).get("freeBytes"))),
+    ]
+    items = "".join(f"<div><dt>{label}</dt><dd>{html.escape(value)}</dd></div>" for label, value in metrics)
+    return f"<section class='summary'><h2>System status <span>{status}</span></h2><dl>{items}</dl></section>"
 
 
 def render(data):
@@ -299,7 +368,7 @@ def render(data):
                     [
                         name,
                         "–" if w["heartbeatAgeSeconds"] is None else w["heartbeatAgeSeconds"],
-                        "stopped" if w["stopped"] else "running",
+                        "stopped" if w["stopped"] else "stalled" if w["stalled"] else "running",
                     ]
                     for name, w in data["workers"].items()
                 ]
@@ -308,6 +377,16 @@ def render(data):
         ),
     ]
     body = "".join(f"<section><h2>{html.escape(title)}</h2>{content}</section>" for title, content in sections)
+    hourly = data["hourly"]
+    charts = "".join(_chart(hourly, key, title) for key, title in CHARTS)
+    values = _table(
+        ["Hour (UTC)", *(title for _, title in CHARTS)],
+        [[_time(row["hourUtc"] * 1000), *(row[key] for key, _ in CHARTS)] for row in hourly],
+    )
+    activity = (
+        "<section class='activity'><h2>Hourly activity</h2><p>Last 24 UTC hours, including the current partial hour.</p>"
+        f"<div class='charts'>{charts}</div><details><summary>Hourly counts</summary>{values}</details></section>"
+    )
     generated = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
     return (
         "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
@@ -316,7 +395,7 @@ def render(data):
         "<title>Is It Fixed admin</title><link rel='stylesheet' href='/admin.css'></head>"
         f"<body><header><h1>Is It Fixed admin</h1><p>Generated {generated} · refreshes every 30 s · "
         "<a href='/api/stats'>JSON</a></p></header>"
-        f"<main>{body}</main></body></html>"
+        f"<main>{_status(data)}{activity}{body}</main></body></html>"
     )
 
 

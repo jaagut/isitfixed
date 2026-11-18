@@ -158,7 +158,7 @@ function productsSection(c, ctx) {
     '</div>',
     `<div id="case-products" class="product-choices panel" ${ctx.chooserOpen ? '' : 'hidden'}>${choices(ctx.state, c.products)}</div>`,
     '<div class="panel product-table">',
-    '<div class="table-head" aria-hidden="true"><span>VERSION</span><span>ASSESSMENT</span><span>FIX & MITIGATION</span></div>',
+    '<div class="table-head" aria-hidden="true"><span>VERSION</span><span>FIX & MITIGATION</span></div>',
     unlistedNote(c, ctx),
     rows,
     '</div>',
@@ -219,19 +219,17 @@ function advisoryLabel(url) {
     return esc(last); // Malformed percent-encoding: show it as published.
   }
 }
-// Source line of the assessment column, with row-level advisories (first two inline, all in a list).
-function assessmentSources(c, p, row) {
-  if (!row.sources.length) return '';
+// Row-level advisories stay with the version they apply to; vendor data links live in Sources.
+function rowAdvisories(p, row) {
   const advisories = row.advisories.filter(isSafeURL);
+  if (!advisories.length) return '';
   const link = (url) => externalLink(safeURL(url), `${advisoryLabel(url)} ↗`);
-  const inline = advisories.length
-    ? ` · Advisor${advisories.length > 1 ? 'ies' : 'y'}: ${advisories.slice(0, 2).map(link).join(', ')}${advisories.length > 2 ? ` <span class="fact-more">+${advisories.length - 2}</span>` : ''}`
-    : '';
+  const inline = `Advisor${advisories.length > 1 ? 'ies' : 'y'}: ${advisories.slice(0, 2).map(link).join(', ')}${advisories.length > 2 ? ` <span class="fact-more">+${advisories.length - 2}</span>` : ''}`;
   const list =
     advisories.length > 2
       ? `<details class="advisory-list" data-detail="${p.id}:advisories"><summary>All ${advisories.length} advisories</summary><div>${advisories.map(link).join('')}</div></details>`
       : '';
-  return `<div class="assessment-source">Source: ${row.sources.map((name) => sourceRef(c, p, name)).join(', ')}${inline}</div>${list}`;
+  return `<div class="row-advisories">${inline}</div>${list}`;
 }
 
 // One line of the fix column. With details it expands in place, below its own summary.
@@ -387,13 +385,12 @@ function productRow(c, p, ctx) {
   const updated = changed
     ? `<span class="row-updated" title="Changed in the update of ${esc(date(c.changedRows.at))}">Updated</span>`
     : '';
-  const vendorLink = externalLink(safeURL(vendorURL(p, c.id)), `${esc(p.vendor)} ↗`);
   const assessment = [
     badge(row.status),
     a.fixAvailable && a.status === 'affected' ? '<small>Older builds / other components remain affected</small>' : '',
     row.status === 'inconclusive' ? '<small>Available evidence does not establish status</small>' : '',
     row.notes.length && row.notes.length <= 2 ? row.notes.map((n) => `<small>${esc(n)}</small>`).join('') : '',
-    assessmentSources(c, p, row),
+    rowAdvisories(p, row),
   ].join('');
   const facts = [
     fixFact(groups, windows, `${p.id}:fix`),
@@ -402,8 +399,7 @@ function productRow(c, p, ctx) {
   ];
   return [
     `<div class="product-row ${changed ? 'changed' : ''}" data-row="${p.id}">`,
-    `<div class="product-name"><strong>${esc(p.name)}</strong>${vendorLink}${updated}</div>`,
-    `<div class="assessment">${assessment}</div>`,
+    `<div class="product-name"><strong>${esc(p.name)}</strong><div class="assessment">${assessment}</div>${updated}</div>`,
     `<div class="fix-summary">${facts.join('')}</div>`,
     '</div>',
   ].join('');

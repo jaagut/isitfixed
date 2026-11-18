@@ -829,3 +829,18 @@ def test_cancelled_inventory_attempt_is_retryable_after_restart(tmp_path):
 
     started = None
     asyncio.run(run())
+
+
+def test_legal_favicon_uses_packaged_frontend_asset(tmp_path, monkeypatch):
+    import hashlib
+
+    # Container images carry assets only in FRONTEND_DIR, not the source checkout.
+    monkeypatch.setattr(legal_module, "ROOT", tmp_path / "missing-source")
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    icon = dist / "assets/icon.svg"
+    icon.write_text("<svg/>")
+    pages = legal_module.LegalPages(Settings(frontend_dir=dist))
+    assert pages.values["favicon"] == "/assets/icon.svg?v=" + hashlib.sha256(icon.read_bytes()).hexdigest()[:12]
+    icon.write_text("<svg>changed</svg>")
+    assert legal_module.LegalPages(Settings(frontend_dir=dist)).values["favicon"] != pages.values["favicon"]

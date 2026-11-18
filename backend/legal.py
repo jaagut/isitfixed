@@ -1,5 +1,6 @@
 """Server-rendered imprint and privacy pages from operator settings and HTML fragment templates."""
 
+import hashlib
 import html
 import logging
 import re
@@ -53,7 +54,14 @@ class LegalPages:
         self.configured = all(
             (settings.legal_operator_name, settings.legal_operator_address, settings.legal_operator_email)
         )
+        icon = Path(settings.frontend_dir) / "assets/icon.svg"
+        if not icon.is_file():
+            icon = ROOT / "assets/icon.svg"
+        favicon = "/assets/icon.svg"
+        if icon.is_file():
+            favicon += "?v=" + hashlib.sha256(icon.read_bytes()).hexdigest()[:12]
         self.values = {
+            "favicon": favicon,
             "operator_name": settings.legal_operator_name,
             "operator_address": settings.legal_operator_address,
             "operator_email": settings.legal_operator_email,

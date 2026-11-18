@@ -204,3 +204,88 @@ test('an unreadable saved workspace is kept under one recovery key instead of be
   assert.equal(locked.raw, '{broken');
   assert.equal(full.getItem(STORAGE_KEY), '{broken');
 });
+
+test('persistence drops unused record payload while preserving assessments and in-memory export', async () => {
+  const { persistWorkspace } = await import('../src/state.js');
+  const s = defaultState();
+  const c = kase(1, {
+    record: {
+      cveMetadata: { cveId: 'CVE-2026-0001' },
+      containers: {
+        cna: {
+          title: 'PHP problem',
+          references: [{ url: 'x'.repeat(100000) }],
+          affected: [
+            {
+              vendor: 'Vendor',
+              product: 'PHP',
+              versions: [{ version: '1', status: 'affected' }],
+              unused: 'x'.repeat(10000),
+            },
+          ],
+          metrics: [{ cvssV3_1: { baseScore: 9 } }],
+        },
+      },
+    },
+  });
+  s.cases.push(c);
+  const before = JSON.stringify(s),
+    store = memoryStorage();
+  assert.equal(persistWorkspace(store, s).saved, true);
+  const saved = loadState(store);
+  assert.deepEqual(saved.cases[0].record.containers.cna.affected[0].versions, [{ version: '1', status: 'affected' }]);
+  assert.equal(saved.cases[0].record.containers.cna.references, undefined);
+  assert.equal(JSON.stringify(s), before);
+});
+
+test('quota fallback preserves user data and baseline, omits oldest archived snapshots, and retains package search', async () => {
+  const { persistWorkspace, caseSearchText } = await import('../src/state.js');
+  const s = defaultState();
+  s.cases.push(
+    kase(1, {
+      archived: 1,
+      notes: 'keep my note',
+      products: ['debian13'],
+      actionBaseline: { rows: {} },
+      record: {
+        cveMetadata: { cveId: 'CVE-2026-0001' },
+        containers: {
+          cna: {
+            title: 'A vulnerability',
+            affected: [{ product: 'php', versions: [{ version: 'x'.repeat(15000), status: 'affected' }] }],
+          },
+        },
+      },
+    }),
+  );
+  const store = memoryStorage({}, 3000);
+  const result = persistWorkspace(store, s);
+  assert.equal(result.saved, true);
+  assert.equal(result.evictedSnapshots, 1);
+  const saved = loadState(store).cases[0];
+  assert.equal(saved.record, undefined);
+  assert.equal(saved.notes, 'keep my note');
+  assert.deepEqual(saved.products, ['debian13']);
+  assert.deepEqual(saved.actionBaseline, { rows: {} });
+  assert.ok(caseSearchText(saved).includes('php'));
+  assert.ok(s.cases[0].record);
+});
+
+test('unavailable storage does not replace the prior save or throw', async () => {
+  const { persistWorkspace } = await import('../src/state.js');
+  const store = memoryStorage({ [STORAGE_KEY]: 'old' }, 100);
+  const s = defaultState();
+  s.cases.push(kase(1, { notes: 'x'.repeat(200) }));
+  assert.equal(persistWorkspace(store, s).saved, false);
+  assert.equal(store.getItem(STORAGE_KEY), 'old');
+});
+
+test('persistence never discards an imported VEX document to satisfy quota', async () => {
+  const { persistWorkspace } = await import('../src/state.js');
+  const s = defaultState();
+  s.cases.push(kase(1, { vex: { document: { title: 'imported', data: 'x'.repeat(5000) } } }));
+  const store = memoryStorage({ [STORAGE_KEY]: 'prior save' }, 1000);
+  assert.equal(persistWorkspace(store, s).saved, false);
+  assert.equal(store.getItem(STORAGE_KEY), 'prior save');
+  assert.equal(s.cases[0].vex.document.title, 'imported');
+});

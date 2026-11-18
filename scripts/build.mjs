@@ -45,6 +45,12 @@ for (const [reference, hashed] of Object.entries(manifest)) {
   if (matches !== 1) throw new Error(`index.html must reference ${reference} exactly once (found ${matches})`);
   html = html.replace(pattern, `$1${hashed}$2`);
 }
+// Favicon URLs change with their contents so browser caches cannot retain an old brand mark.
+const iconHash = createHash('sha256')
+  .update(await readFile(path.join(root, 'assets/icon.svg')))
+  .digest('hex')
+  .slice(0, 12);
+html = html.replace(/\/assets\/icon\.svg(?:\?v=[a-f0-9]+)?/g, `/assets/icon.svg?v=${iconHash}`);
 await writeFile(path.join(out, 'index.html'), html);
 await cp(path.join(root, 'assets'), path.join(out, 'assets'), { recursive: true });
 await writeFile(path.join(out, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);

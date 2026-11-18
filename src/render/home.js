@@ -42,7 +42,7 @@ function homeCaseRow(c, ctx) {
     `<span class="case-status ${st}" aria-hidden="true">${statusSymbols[st]}</span>`,
     '<span class="home-case-main">',
     `<span class="home-case-id">${c.id}${cvssChip(s)}${update}</span>`,
-    `<small>${esc(c.record ? s.title : 'Awaiting lookup')}</small>`,
+    `<small>${esc(c.record ? s.title : c.savedTitle || 'Awaiting lookup')}</small>`,
     '</span>',
     '<span class="home-case-meta">',
     `<span>${esc(statusDescription(c))}</span>`,

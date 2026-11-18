@@ -6,13 +6,14 @@ import { streamCase, syncWatches, fetchAgents, fetchConfig, DEFAULT_CONFIG } fro
 import { validId, extractCveIds } from './data.js';
 import { caseActionState, diffActions, withoutTmds, describeChanges } from './changes.js';
 import {
-  STORAGE_KEY,
   THEME_KEY,
   DISCLAIMER_VERSION,
   MAX_OPEN_CASES,
   MAX_CASES,
   loadWorkspace,
   saveable,
+  persistWorkspace,
+  caseSearchText,
 } from './state.js';
 import { esc, icons, HOUR } from './util.js';
 import {
@@ -40,7 +41,8 @@ let state = loaded.state,
   active = null,
   chooserOpen = false,
   archivedOpen = false,
-  homeFilter = null;
+  homeFilter = null,
+  storageFailed = false;
 const busy = new Set(),
   groupOverride = new Map(),
   inventory = { data: null, error: null };
@@ -52,11 +54,15 @@ function save() {
     toast('Changes were not saved: the workspace exceeds its limits. Delete or archive cases.');
     return;
   }
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {
-    toast('Storage unavailable or full. Export a backup to avoid losing changes.');
+  const result = persistWorkspace(localStorage, state);
+  if (!result.saved && !storageFailed) {
+    toast('Browser storage is full or unavailable. Your changes are kept in this tab; export a backup.', {
+      label: 'Export backup',
+      run: () =>
+        download(JSON.stringify(state, null, 2), `isitfixed-backup-${new Date().toISOString().slice(0, 10)}.json`),
+    });
   }
+  storageFailed = !result.saved;
 }
 // `action` adds one button ({label, run}); such a toast stays longer and can be clicked.
 function toast(message, action = null) {
@@ -277,7 +283,7 @@ function caseEntry(c) {
     `<div class="case-entry ${archived ? 'archived' : ''}">`,
     `<button type="button" class="case-item ${current ? 'selected' : ''}" data-case="${c.id}" ${current ? 'aria-current="page"' : ''} title="${description}">`,
     `<span class="case-id">${icon}${c.id}${cvssChip(sum(c.record, state.cvss))}${unread}</span>`,
-    `<small>${esc(c.record ? sum(c.record, state.cvss).title : 'Awaiting lookup')}</small>`,
+    `<small>${esc(c.record ? sum(c.record, state.cvss).title : c.savedTitle || 'Awaiting lookup')}</small>`,
     statusBar(c),
     '</button>',
     caseActions(c),
@@ -295,8 +301,9 @@ function brokenEntry(c) {
 }
 const entry = (c) => safely(() => caseEntry(c), brokenEntry(c));
 function renderSidebar() {
-  const q = $('#search').value.toLowerCase(),
-    match = (c) => safely(() => `${c.id} ${sum(c.record, state.cvss).title}`.toLowerCase().includes(q), true);
+  const q = $('#search').value.trim().toLowerCase(),
+    terms = q.split(/\s+/).filter(Boolean),
+    match = (c) => safely(() => terms.every((term) => caseSearchText(c).includes(term)), true);
   const cases = sortedCases(state).filter(match),
     open = cases.filter((c) => !c.archived),
     archived = cases.filter((c) => c.archived);
@@ -366,6 +373,10 @@ function render() {
   renderSidebar();
   const main = $('#main'),
     c = state.cases.find((c) => c.id === active);
+  const homeInput = $('#home-input'),
+    homeDraft = homeInput?.value,
+    homeFocused = document.activeElement === homeInput,
+    selection = homeFocused ? [homeInput.selectionStart, homeInput.selectionEnd] : null;
   const open = new Set([...main.querySelectorAll('details[data-detail][open]')].map((d) => d.dataset.detail));
   try {
     main.innerHTML = c ? renderCase(c, context()) : renderHome(context(), homeFilter);
@@ -377,7 +388,15 @@ function render() {
   for (const d of main.querySelectorAll('details[data-detail]')) if (open.has(d.dataset.detail)) d.open = true;
   applyBars(main);
   if (c) bindCase(c);
-  else bindHome();
+  else {
+    bindHome();
+    if (homeDraft) $('#home-input').value = homeDraft;
+    if (homeFocused || document.activeElement === document.body) focusHome();
+    if (selection) $('#home-input')?.setSelectionRange(...selection);
+  }
+}
+function focusHome() {
+  if (!active && !document.querySelector('dialog[open]')) $('#home-input')?.focus({ preventScroll: true });
 }
 // Fallback when a view throws (for example on damaged saved data).
 function renderFailure(c) {
@@ -635,6 +654,7 @@ $('#disclaimer-accept').onclick = () => {
   state.disclaimerAccepted = DISCLAIMER_VERSION;
   save();
   disclaimer.close();
+  focusHome();
 };
 
 // Global controls
@@ -688,9 +708,11 @@ $('.brand').onclick = (e) => {
 document.addEventListener('keydown', (e) => {
   const key = e.key.toLowerCase(),
     mod = e.ctrlKey || e.metaKey,
-    typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName);
+    typing =
+      ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName) ||
+      document.activeElement.isContentEditable;
   if (document.querySelector('dialog[open]') || e.altKey) return;
-  if ((mod && (key === 'n' || key === 'k')) || (key === 'n' && !mod && !typing)) {
+  if ((mod && key === 'k') || (key === '/' && !mod && !typing)) {
     e.preventDefault();
     openAdd();
   }

@@ -81,7 +81,11 @@ let workspace;
 function workspaceId() {
   if (workspace) return workspace;
   // Preserve the existing anonymous watch identity across the product rename.
-  workspace = localStorage.getItem('cve-desk-workspace');
+  try {
+    workspace = localStorage.getItem('cve-desk-workspace');
+  } catch {
+    // Disabled storage still permits one stable identity for this tab's lifetime.
+  }
   if (!workspace) {
     if (crypto.randomUUID) workspace = crypto.randomUUID();
     else {
@@ -91,7 +95,11 @@ function workspaceId() {
       const hex = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
       workspace = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
     }
-    localStorage.setItem('cve-desk-workspace', workspace);
+    try {
+      localStorage.setItem('cve-desk-workspace', workspace);
+    } catch {
+      // Keep the in-memory identity rather than failing every watch synchronization.
+    }
   }
   return workspace;
 }

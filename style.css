@@ -635,6 +635,7 @@ input[type='checkbox'] {
   flex-direction: column;
 }
 .workspace {
+  min-width: 0;
   margin-left: var(--sidebar-width, 265px);
   min-height: 100vh;
   display: flex;
@@ -646,6 +647,47 @@ main {
   padding: 30px 43px 32px;
   margin: auto;
   flex: 1;
+}
+.sidebar-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 30px;
+  min-width: 0;
+}
+.sidebar-heading .brand {
+  margin: 0;
+  min-width: 0;
+}
+.sidebar-heading .icon-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 7px;
+  color: var(--text-muted);
+}
+.sidebar-heading .icon-link:hover {
+  background: var(--surface-hover);
+  color: var(--text-strong);
+}
+strong.product-name {
+  display: inline;
+  font-size: inherit;
+  color: var(--text-strong);
+}
+.settings-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+.settings-logo img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
 }
 .brand {
   font-family: var(--font-sans);
@@ -1123,7 +1165,7 @@ main {
   border-color: var(--border);
   color: var(--text-soft);
 }
-.assessment-source a,
+.row-advisories a,
 .source-link a,
 .fact-source a,
 .source-advisories a,
@@ -1133,7 +1175,7 @@ main {
   text-decoration-color: var(--link-underline);
   text-underline-offset: 3px;
 }
-.assessment-source a:hover,
+.row-advisories a:hover,
 .source-link a:hover,
 .fact-source a:hover,
 .source-advisories a:hover,
@@ -1458,7 +1500,7 @@ main {
 .table-head,
 .product-row {
   display: grid;
-  grid-template-columns: 0.65fr 0.9fr 1.7fr;
+  grid-template-columns: minmax(140px, 1fr) minmax(0, 2.7fr);
   align-items: start;
 }
 .table-head {
@@ -1494,6 +1536,8 @@ main {
   color: var(--text-muted);
 }
 .product-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -1556,7 +1600,7 @@ main {
   line-height: 1.6;
   margin-top: 6px;
 }
-.assessment-source {
+.row-advisories {
   margin-top: 7px;
   font-size: 10px;
   line-height: 1.7;
@@ -2703,23 +2747,51 @@ dialog input:not([type='checkbox']):not([type='file']) {
     position: relative;
     width: 100%;
     padding: 18px 18px 10px;
-    max-height: 300px;
+    max-height: none;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .sidebar-heading {
+    grid-column: 1 / -1;
+    margin-bottom: 0;
+  }
+  .sidebar-heading .icon-link {
+    width: 44px;
+    height: 44px;
   }
   .brand {
-    margin-bottom: 18px;
+    grid-column: 1 / -1;
+    margin-bottom: 0;
   }
   .sidebar-bottom p,
-  .search,
   .sidebar-label,
   #sidebar-resize,
   .sidebar kbd {
     display: none;
   }
-  #case-list {
+  .sidebar .search {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    margin: 0;
+    min-width: 0;
+  }
+  #case-list,
+  #archived-list {
+    grid-column: 1 / -1;
     display: flex;
     gap: 8px;
-    margin-top: 10px;
-    flex-shrink: 0;
+    min-width: 0;
+    max-height: 150px;
+    overflow: auto;
+    margin: 0;
+  }
+  .archive-toggle {
+    grid-column: 1 / -1;
+    margin: 0;
   }
   .case-entry {
     width: 210px;
@@ -2729,16 +2801,16 @@ dialog input:not([type='checkbox']):not([type='file']) {
     pointer-events: auto;
   }
   .sidebar > .full {
-    width: auto;
-    position: absolute;
-    right: 18px;
-    top: 20px;
+    width: 100%;
+    position: static;
+    grid-column: 1;
+    grid-row: 2;
   }
-  /* Settings stays reachable as an icon button left of "Open a case". */
+  /* Controls participate in layout, so they cannot cover the brand or case list. */
   .sidebar-bottom {
-    position: absolute;
-    top: 20px;
-    right: 168px;
+    position: static;
+    grid-column: 2;
+    grid-row: 2;
     padding: 0;
     border: 0;
   }
@@ -2765,6 +2837,11 @@ dialog input:not([type='checkbox']):not([type='file']) {
   }
   .case-header {
     gap: 10px;
+    flex-wrap: wrap;
+  }
+  .case-heading {
+    flex: 1 1 220px;
+    overflow-wrap: anywhere;
   }
   /* Icon-only actions; each button keeps its aria-label. */
   .case-action {
@@ -2808,6 +2885,7 @@ dialog input:not([type='checkbox']):not([type='file']) {
   }
   .section-heading {
     align-items: flex-start;
+    flex-wrap: wrap;
   }
   .section-heading h2 {
     font-size: 15px;
@@ -2833,12 +2911,12 @@ dialog input:not([type='checkbox']):not([type='file']) {
   .table-head {
     display: none;
   }
-  .table-head,
   .product-row {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    padding: 16px;
   }
   .fix-summary {
-    grid-column: 1/3;
+    grid-column: 1;
   }
   .fact > summary {
     grid-template-columns: 70px minmax(0, 1fr) 14px;

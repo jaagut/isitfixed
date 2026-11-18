@@ -92,7 +92,7 @@ function recordCard(c, now) {
 function inventoryCards(families, products, { data, error }, now) {
   const linux = products.filter((p) => kernelFamilies.includes(p.family));
   const agent = card('tmds-agent', 'TMDS Agent inventory', { urlLabel: 'Download center feed' });
-  const ksp = card('tmds-ksp', 'Kernel Support Packages', { urlLabel: 'Kernel list' });
+  const ksp = card('tmds-ksp', 'TMDS Kernel Support Packages', { urlLabel: 'Kernel list' });
   if (!data) {
     const state = error ? 'error' : 'loading';
     const warnings = error ? [sentence(error)] : [];

@@ -228,3 +228,100 @@ export function loadWorkspace(storage, now = Date.now()) {
   }
 }
 export const loadState = (storage) => loadWorkspace(storage).state;
+
+const list = (v) => (Array.isArray(v) ? v : []);
+
+// Search includes package names and descriptions: the CNA title often names neither.
+export function caseSearchText(c) {
+  const cna = c.record?.containers?.cna;
+  return [
+    c.id,
+    c.notes,
+    c.savedTitle,
+    c.searchText,
+    cna?.title,
+    ...list(cna?.descriptions).map((d) => d?.value),
+    ...list(cna?.affected).flatMap((a) => [a?.vendor, a?.product, a?.packageName]),
+    ...Object.values(c.vendorData?.evidence || {}).flatMap((entries) =>
+      list(entries).flatMap((e) => [e?.name, e?.note, ...list(e?.fix)]),
+    ),
+  ]
+    .filter((v) => typeof v === 'string')
+    .join(' ')
+    .toLowerCase();
+}
+
+const pick = (value, keys) =>
+  Object.fromEntries(keys.filter((key) => value?.[key] !== undefined).map((key) => [key, value[key]]));
+function compactRecord(record) {
+  const cna = record?.containers?.cna;
+  if (!cna) return record;
+  return {
+    cveMetadata: record.cveMetadata,
+    containers: {
+      cna: {
+        ...pick(cna, ['title', 'descriptions', 'metrics', 'problemTypes', 'providerMetadata']),
+        ...(Array.isArray(cna.affected)
+          ? {
+              affected: cna.affected.map((a) =>
+                pick(a, ['vendor', 'product', 'packageName', 'defaultStatus', 'versions']),
+              ),
+            }
+          : {}),
+      },
+      ...(Array.isArray(record.containers.adp) ? { adp: record.containers.adp.map((a) => pick(a, ['metrics'])) } : {}),
+    },
+  };
+}
+
+// localStorage commonly allows about 5 MiB, counting UTF-16 strings. Leave room for
+// preferences, watch identity and other origin keys; failure still preserves the old save.
+export const WORKSPACE_CHAR_BUDGET = 2_000_000;
+export function persistWorkspace(storage, state, budget = WORKSPACE_CHAR_BUDGET) {
+  if (!saveable(state)) return { saved: false, reason: 'invalid' };
+  const cases = state.cases.map((c) => ({
+    ...c,
+    ...(c.record ? { record: compactRecord(c.record) } : {}),
+  }));
+  const snapshot = { ...state, cases };
+  const candidates = cases
+    .filter((c) => c.record || c.vendorData)
+    .sort(
+      (a, b) =>
+        Boolean(b.archived) - Boolean(a.archived) || (a.updatedAt || a.created || 0) - (b.updatedAt || b.created || 0),
+    );
+  let evictedSnapshots = 0;
+  const evict = (c) => {
+    // Keep enough metadata for sidebar search when a disposable snapshot is omitted.
+    c.savedTitle = c.record?.containers?.cna?.title || c.savedTitle;
+    // Bound derived search metadata, never user-authored notes.
+    c.searchText = caseSearchText(c).slice(0, 16000);
+    for (const key of ['record', 'vendorData', 'apiChecked', 'checked', 'cache']) delete c[key];
+    evictedSnapshots++;
+  };
+  let raw = JSON.stringify(snapshot);
+  if (raw.length > budget) {
+    let estimate = raw.length;
+    while (estimate > budget && candidates.length) {
+      const c = candidates.shift(),
+        before = JSON.stringify(c).length;
+      evict(c);
+      estimate -= before - JSON.stringify(c).length;
+    }
+    raw = JSON.stringify(snapshot);
+  }
+  while (true) {
+    if (raw.length > budget) return { saved: false, reason: 'full', evictedSnapshots };
+    try {
+      storage.setItem(STORAGE_KEY, raw);
+      return { saved: true, compacted: true, evictedSnapshots };
+    } catch {
+      // Actual quotas can be smaller (or another origin key can occupy space).
+      // Retry with fewer caches, but never delete the previous workspace to make room.
+      if (!candidates.length) return { saved: false, reason: 'unavailable', evictedSnapshots };
+      const count = Math.ceil(candidates.length / 2);
+      for (const c of candidates.splice(0, count)) evict(c);
+      raw = JSON.stringify(snapshot);
+    }
+  }
+}

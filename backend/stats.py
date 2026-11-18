@@ -29,8 +29,8 @@ class Stats:
         self.pending.clear()
 
     def totals(self, hours):
-        """Counter totals over the current hour bucket plus the ``hours`` preceding buckets."""
-        start = int(self.clock() // HOUR) - hours
+        """Counter totals over the most recent ``hours`` buckets, including the current partial hour."""
+        start = int(self.clock() // HOUR) - hours + 1
         totals = Counter(
             {
                 row[0]: row[1]
@@ -43,6 +43,29 @@ class Stats:
             if hour >= start:
                 totals[name] += count
         return totals
+
+    def hourly(self, hours=24):
+        """Contiguous UTC buckets for charts, including counters awaiting their next flush."""
+        end = int(self.clock() // HOUR)
+        start = end - hours + 1
+        buckets = {hour: Counter() for hour in range(start, end + 1)}
+        for hour, name, count in self.cache.db.execute(
+            "SELECT hour, name, count FROM stats WHERE hour BETWEEN ? AND ?", (start, end)
+        ):
+            buckets[hour][name] += count
+        for (hour, name), count in self.pending.items():
+            if hour in buckets:
+                buckets[hour][name] += count
+        return [
+            {
+                "hourUtc": hour * HOUR,
+                "refreshes": sum(n for key, n in counts.items() if key.startswith("refresh.")),
+                "fetches": sum(n for key, n in counts.items() if key.startswith("fetch.")),
+                "failures": sum(n for key, n in counts.items() if key.startswith("failure.")),
+                "rateLimited": sum(n for key, n in counts.items() if key.startswith("ratelimited.")),
+            }
+            for hour, counts in buckets.items()
+        ]
 
     def windows(self):
         return {label: self.totals(hours) for label, hours in WINDOWS.items()}

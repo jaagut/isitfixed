@@ -88,3 +88,24 @@ def test_counters_persist_in_hourly_buckets(tmp_path):
         stats.clock.now += 15 * 24 * 3600
         stats.flush()
         assert stats.totals(24 * 14)["refresh.manual"] == 0
+
+
+def test_admin_charts_include_pending_and_stored_buckets(tmp_path):
+    public, _, admin = run(tmp_path)
+    with TestClient(public), TestClient(admin) as client:
+        stats = public.state.stats
+        assert client.get("/").text.count("No events recorded") == 4
+        stats.incr("fetch.record", 2)
+        stats.flush()
+        stats.incr("fetch.rhel")
+        stats.clock.now += 3600
+        stats.incr("failure.rhel")
+        hourly = client.get("/api/stats").json()["hourly"]
+        assert len(hourly) == 24
+        assert hourly[-2]["fetches"] == 3 and hourly[-1]["failures"] == 1
+        assert hourly[-1]["hourUtc"] - hourly[0]["hourUtc"] == 23 * 3600
+        assert stats.totals(1)["fetch.record"] == 0
+        page = client.get("/").text
+        assert "System status" in page and "Healthy" in page
+        assert "<summary>Hourly counts</summary>" in page
+        assert page.count("<svg role='img'") == 2
