@@ -1374,7 +1374,10 @@ span.product-name {
   justify-content: space-around;
   max-height: 0;
   padding: 0;
-  background: linear-gradient(90deg, var(--bar-line) 1px, transparent 0) 0 0 / calc(100% / var(--n)) 100%;
+  /* Two tones: a tint of the status colour behind the logos, the solid colour in the bar below. */
+  background:
+    linear-gradient(90deg, var(--bar-line) 1px, transparent 0) 0 0 / calc(100% / var(--n)) 100%,
+    color-mix(in srgb, var(--seg) 22%, transparent);
   opacity: 0;
   visibility: hidden;
   overflow: hidden;
@@ -1385,7 +1388,11 @@ span.product-name {
     visibility 0s 140ms;
 }
 .status-seg:first-child .seg-logos {
-  background-position-x: -1px;
+  background-position-x: -1px, 0;
+  border-top-left-radius: 6px;
+}
+.status-seg:last-child .seg-logos {
+  border-top-right-radius: 6px;
 }
 .case-entry:hover .seg-logos,
 .home-case-entry:hover .seg-logos,

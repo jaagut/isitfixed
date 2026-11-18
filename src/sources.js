@@ -1,8 +1,8 @@
 // Source cards for a case: one per selected vendor family, the CVE record and,
 // with TMDS enabled, the agent inventory and the Kernel Support Package list.
 // Pure: returns data for the Sources section and the case status line.
-import { VENDORS } from './data.js';
-import { HOUR } from './util.js';
+import { VENDORS, suseAdvisories } from './data.js';
+import { HOUR, plural } from './util.js';
 import { kernelFamilies } from './tmds.js';
 
 export const STALE_AFTER = 2 * HOUR;
@@ -33,12 +33,34 @@ const card = (id, name, extra) => ({
   warnings: [],
   notes: [],
   advisories: [],
+  advisoriesLabel: 'Advisories',
+  advisoryNote: '',
   excludedImages: 0,
   retryAfter: null,
   ...extra,
 });
 const isStale = (checked, now) => Boolean(checked) && now - checked > STALE_AFTER;
 const STALE_WARNING = 'Last checked more than 2 hours ago.';
+
+// SUSE documents also reference other products' advisories (RHSA for SUSE Liberty Linux) and
+// support articles; the card lists SUSE-SU updates and says what it left out.
+function documentAdvisories(family, list) {
+  const all = Array.isArray(list) ? list.filter((a) => typeof a?.url === 'string') : [];
+  if (family !== 'sles') return { advisories: all };
+  const advisories = suseAdvisories(all);
+  const others = all.filter((a) => !/^SUSE-SU-/.test(a.label));
+  const liberty = others.filter((a) => /^RHSA-/.test(a.label)).length,
+    rest = others.length - liberty;
+  const left = [
+    liberty ? plural(liberty, 'RHSA advisory', 'RHSA advisories') + ' for SUSE Liberty Linux' : '',
+    rest ? plural(rest, 'other reference') : '',
+  ].filter(Boolean);
+  return {
+    advisories,
+    advisoriesLabel: 'SUSE security updates',
+    advisoryNote: left.length ? `Not listed (not SUSE Linux Enterprise updates): ${left.join(', ')}.` : '',
+  };
+}
 
 function vendorCard(family, s, now) {
   const vendor = VENDORS.find((v) => v.id === family);
@@ -47,7 +69,7 @@ function vendorCard(family, s, now) {
     updated: s?.sourceUpdated || null,
     url: s?.url || null,
     urlLabel: 'Vendor data',
-    advisories: Array.isArray(s?.advisories) ? s.advisories : [],
+    ...documentAdvisories(family, s?.advisories),
     excludedImages: s?.excludedImages || 0,
   });
   if (family === 'windows')

@@ -1,8 +1,8 @@
 // Case page: header with actions and source status line, overview, OS rows and
 // the Sources section. Pure: returns HTML for a case and a render context:
 //   { state, config, inventory: {data, error}, tmdsOn, busy: Set, chooserOpen, groupOverride: Map, now }
-import { VENDORS, PRODUCTS, vendorURL, groupFixes, splitPackage } from '../data.js';
-import { rowAssessment, CNA_SOURCE, cleanMitigation } from '../rows.js';
+import { VENDORS, PRODUCTS, vendorURL, vendorName, groupFixes, splitPackage } from '../data.js';
+import { rowAssessment, CNA_SOURCE, cleanMitigation, listNames } from '../rows.js';
 import { kernelSupport, supportSummary, productInventory, isKernelFix, kspName, kernelFamilies } from '../tmds.js';
 import { sourceCards, sourceSummary, SOURCE_STATES } from '../sources.js';
 import { esc, safeURL, externalLink, sourceLink, isSafeURL, date, time, day, plural, icons } from '../util.js';
@@ -161,7 +161,7 @@ function productsSection(c, ctx) {
     '</div>',
     '<div class="panel product-table">',
     `<button type="button" id="edit-products" class="chooser-toggle" aria-expanded="${ctx.chooserOpen}" aria-controls="case-products">${icons.chevron}Choose OS versions <span class="count" aria-label="${plural(c.products.length, 'version')} selected">${c.products.length}</span></button>`,
-    `<div id="case-products" class="product-choices" ${ctx.chooserOpen ? '' : 'hidden'}>${choices(ctx.state, c.products)}</div>`,
+    `<div id="case-products" class="product-choices collapsible" ${ctx.chooserOpen ? '' : 'hidden'}>${choices(ctx.state, c.products)}</div>`,
     unlistedNote(c, ctx),
     rows,
     '</div>',
@@ -206,6 +206,7 @@ function osGroup(c, v, ctx) {
   ].join('');
 }
 
+const RED_HAT_VEX = 'Red Hat VEX';
 // Where a piece of evidence came from: vendor feed, CVE record (CNA statement) or an imported file.
 function sourceRef(c, p, name) {
   let url;
@@ -221,16 +222,38 @@ function advisoryLabel(url) {
     return esc(last); // Malformed percent-encoding: show it as published.
   }
 }
-// Row-level advisories stay with the version they apply to; vendor data links live in Sources.
-function rowAdvisories(p, row) {
-  const advisories = row.advisories.filter(isSafeURL);
-  if (!advisories.length) return '';
-  const link = (url) => externalLink(safeURL(url), `${advisoryLabel(url)} ↗`);
+const SUSE_SCOPE =
+  "Listed in SUSE's CVE document for all SUSE products; check each advisory's product and service-pack scope.";
+// Row-level advisories stay with the version they apply to, followed by the vendor's CVE page;
+// vendor data links live in Sources. SLES rows without their own fall back to SUSE's CVE-wide updates.
+function rowAdvisories(c, p, row) {
+  const own = row.advisories.filter(isSafeURL).map((url) => ({ url, label: advisoryLabel(url) }));
+  const advisories = own.length
+    ? own
+    : row.documentAdvisories.filter((a) => isSafeURL(a.url)).map((a) => ({ url: a.url, label: esc(a.label) }));
+  const vendorPage = externalLink(safeURL(vendorURL(p, c.id)), `${esc(vendorName(p))} CVE page ↗`);
+  if (!advisories.length) return `<div class="row-advisories">${vendorPage}</div>`;
+  const link = (a) => externalLink(safeURL(a.url), `${a.label} ↗`);
   const extra = advisories.slice(2);
   const more = extra.length
     ? `<details class="advisory-list" data-detail="${p.id}:advisories"><summary aria-label="Show ${extra.length} more advisor${extra.length === 1 ? 'y' : 'ies'}">+${extra.length}</summary><div>${extra.map(link).join('')}</div></details>`
     : '';
-  return `<div class="row-advisories"><span>Advisor${advisories.length > 1 ? 'ies' : 'y'}: ${advisories.slice(0, 2).map(link).join(', ')}</span>${more}</div>`;
+  const many = advisories.length > 1;
+  const label = own.length
+    ? `<span>Advisor${many ? 'ies' : 'y'}: `
+    : `<span title="${esc(SUSE_SCOPE)}">SUSE advisor${many ? 'ies' : 'y'} (all products): `;
+  return `<div class="row-advisories">${label}${advisories.slice(0, 2).map(link).join(', ')}</span>${more}${vendorPage}</div>`;
+}
+// Notes beyond the first two unfold in place, like extra advisories.
+function rowNotes(p, notes) {
+  const shown = notes
+    .slice(0, 2)
+    .map((n) => `<small>${esc(n)}</small>`)
+    .join('');
+  const extra = notes.slice(2);
+  if (!extra.length) return shown;
+  const items = extra.map((n) => `<span>${esc(n)}</span>`).join('');
+  return `${shown}<div class="row-advisories"><details class="advisory-list" data-detail="${p.id}:notes"><summary aria-label="Show ${plural(extra.length, 'more note')}">+${extra.length} more</summary><div>${items}</div></details></div>`;
 }
 
 // One line of the fix column. With details it expands in place, below its own summary.
@@ -280,11 +303,13 @@ function mitigationFact(c, p, mitigations, row) {
   const attribution = (m) =>
     m.sources
       .map((name) => {
-        // Prefer the human advisory attached to the evidence carrying this mitigation.
+        // Red Hat VEX links the advisory that carries the mitigation; other vendors' links (such as
+        // Ubuntu USNs) belong to fixes, so their mitigations point to the vendor's CVE page.
         const advisories = row.assessment.evidence
           .filter(
             (e) =>
               (e.source || CNA_SOURCE) === name &&
+              name === RED_HAT_VEX &&
               (e.mitigation || []).some((text) => cleanMitigation(text) === m.text),
           )
           .flatMap((e) => e.links || [])
@@ -293,7 +318,7 @@ function mitigationFact(c, p, mitigations, row) {
           return [...new Set(advisories)]
             .map((url) => externalLink(safeURL(url), `${advisoryLabel(url)} ↗`))
             .join(', ');
-        if (name !== CNA_SOURCE) return externalLink(safeURL(vendorURL(p, c.id)), `${esc(p.vendor)} advisory ↗`);
+        if (name !== CNA_SOURCE) return externalLink(safeURL(vendorURL(p, c.id)), `${esc(vendorName(p))} CVE page ↗`);
         return sourceRef(c, p, name);
       })
       .join(', ');
@@ -397,8 +422,7 @@ function tmdsFact(p, fixes, ctx) {
 }
 
 function productRow(c, p, ctx) {
-  const row = rowAssessment(c, p),
-    a = row.assessment;
+  const row = rowAssessment(c, p);
   const groups = groupFixes(row.fixes),
     windows = p.family === 'windows';
   if (windows) labelWindowsBuilds(groups);
@@ -408,10 +432,10 @@ function productRow(c, p, ctx) {
     : '';
   const assessment = [
     badge(row.status),
-    a.fixAvailable && a.status === 'affected' ? '<small>Older builds / other components remain affected</small>' : '',
-    row.status === 'inconclusive' ? '<small>Available evidence does not establish status</small>' : '',
-    row.notes.length && row.notes.length <= 2 ? row.notes.map((n) => `<small>${esc(n)}</small>`).join('') : '',
-    rowAdvisories(p, row),
+    row.explanation ? `<small>${esc(row.explanation)}</small>` : '',
+    row.stillAffected.length ? `<small>Still affected: ${esc(listNames(row.stillAffected))}</small>` : '',
+    rowNotes(p, row.notes),
+    rowAdvisories(c, p, row),
   ].join('');
   const facts = [
     fixFact(groups, windows, `${p.id}:fix`),
@@ -440,15 +464,18 @@ function sourceCard(s) {
   const excluded = images
     ? `<p class="source-note">${plural(images, 'public-cloud image entry', 'public-cloud image entries')} not counted in OS rows; see the vendor source.</p>`
     : '';
+  const advisoryNote = s.advisoryNote ? ` ${esc(s.advisoryNote)}` : '';
   const advisories = s.advisories.length
     ? [
         `<details class="source-advisories" data-detail="source:${s.id}">`,
-        `<summary>${icons.chevron}Advisories in source document (${s.advisories.length})</summary>`,
-        "<p>Check each advisory's product and service-pack scope.</p>",
+        `<summary>${icons.chevron}${esc(s.advisoriesLabel || 'Advisories')} in source document (${s.advisories.length})</summary>`,
+        `<p>Check each advisory's product and service-pack scope.${advisoryNote}</p>`,
         `<div>${s.advisories.map((a) => sourceLink(a.url, a.label || a.url)).join('')}</div>`,
         '</details>',
       ].join('')
-    : '';
+    : advisoryNote
+      ? `<p class="source-note">${advisoryNote.trim()}</p>`
+      : '';
   return [
     `<article class="source-card ${s.state}">`,
     `<header><h3>${esc(s.name)}</h3><span class="source-state ${s.state}">${SOURCE_STATES[s.state]}</span></header>`,

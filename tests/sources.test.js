@@ -92,3 +92,31 @@ test('TMDS cards appear only when enabled and reflect the inventory', () => {
   });
   assert.equal(old.at(-1).state, 'no-data');
 });
+
+test('SUSE card lists SUSE-SU updates and names what it left out; other vendors keep their list', () => {
+  const advisories = [
+    { url: 'https://access.redhat.com/errata/RHSA-2026:1', label: 'RHSA-2026:1' },
+    { url: 'https://access.redhat.com/errata/RHSA-2026:2', label: 'RHSA-2026:2' },
+    { url: 'https://www.suse.com/support/kb/doc/?id=1', label: 'TID-CVE-2024-1086' },
+    { url: 'https://lists.suse.com/a.html', label: 'SUSE-SU-2024:0463-1' },
+  ];
+  const c = structuredClone(base);
+  c.vendorData.sources.sles.advisories = advisories;
+  c.vendorData.sources.rhel.advisories = advisories.slice(0, 1);
+  const cards = sourceCards(c, products, { now: NOW });
+  const sles = cards.find((x) => x.id === 'sles');
+  assert.deepEqual(
+    sles.advisories.map((a) => a.label),
+    ['SUSE-SU-2024:0463-1'],
+  );
+  assert.equal(sles.advisoriesLabel, 'SUSE security updates');
+  assert.equal(
+    sles.advisoryNote,
+    'Not listed (not SUSE Linux Enterprise updates): 2 RHSA advisories for SUSE Liberty Linux, 1 other reference.',
+  );
+  const rhel = cards.find((x) => x.id === 'rhel');
+  assert.equal(rhel.advisories.length, 1);
+  assert.equal(rhel.advisoryNote, '');
+  c.vendorData.sources.sles.advisories = advisories.slice(3);
+  assert.equal(sourceCards(c, products, { now: NOW }).find((x) => x.id === 'sles').advisoryNote, '');
+});

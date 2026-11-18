@@ -1,6 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { assess, assessVex, PRODUCTS, summary, validId, migrateProducts } from '../src/data.js';
+import {
+  assess,
+  assessVex,
+  PRODUCTS,
+  summary,
+  validId,
+  migrateProducts,
+  suseAdvisories,
+  vendorName,
+} from '../src/data.js';
 const p = PRODUCTS.find((p) => p.id === 'rhel9');
 const record = (affected) => ({ cveMetadata: { cveId: 'CVE-2024-3094' }, containers: { cna: { affected } } });
 test('missing product is unknown and RHEL major versions stay separate', () => {
@@ -178,4 +187,29 @@ test('CVSS uses the preferred version and falls back', () => {
   assert.deepEqual([summary(r, '4.0').score, summary(r, '4.0').cvssVersion], [9.3, '4.0']);
   assert.deepEqual([summary(r, '2.0').score, summary(r, '2.0').severity], [5, 'MEDIUM']);
   assert.equal(summary(r).published, '2024-01-02T00:00:00');
+});
+
+test('vendor names for rows; SUSE document advisories keep SUSE-SU updates once, in document order', () => {
+  const name = (id) => vendorName(PRODUCTS.find((p) => p.id === id));
+  assert.deepEqual(['rhel9', 'ubuntu2404', 'sles15', 'windows11', 'alpine322'].map(name), [
+    'Red Hat',
+    'Ubuntu',
+    'SUSE',
+    'Microsoft',
+    'Alpine',
+  ]);
+  const list = [
+    { url: 'https://access.redhat.com/errata/RHSA-2025:21174', label: 'RHSA-2025:21174' },
+    { url: 'https://www.suse.com/a/', label: 'SUSE-SU-2026:24386-1' },
+    { url: 'https://www.suse.com/b/', label: 'SUSE-SU-2025:3758-1' },
+    { url: 'https://www.suse.com/a/', label: 'SUSE-SU-2026:24386-1' },
+    { url: 'https://www.suse.com/kb/', label: 'TID-CVE-2026-98432' },
+    { label: 'SUSE-SU-2026:1-1' },
+    null,
+  ];
+  assert.deepEqual(
+    suseAdvisories(list).map((a) => a.label),
+    ['SUSE-SU-2026:24386-1', 'SUSE-SU-2025:3758-1'],
+  );
+  assert.deepEqual(suseAdvisories(undefined), []);
 });

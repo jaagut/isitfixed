@@ -85,6 +85,17 @@ export function migrateProducts(ids) {
     ),
   ];
 }
+// The name a row uses for its vendor: Canonical publishes Ubuntu's tracker as "Ubuntu".
+export const vendorName = (product) => (product.family === 'ubuntu' ? 'Ubuntu' : product.vendor);
+// SUSE CVE documents also reference RHSA advisories (SUSE Liberty Linux) and support articles;
+// only SUSE-SU security updates concern SUSE Linux Enterprise. Document order, each label once
+// (SUSE numbers several advisory series, so the numbers do not sort by date).
+export function suseAdvisories(list) {
+  const seen = new Set();
+  return (Array.isArray(list) ? list : []).filter(
+    (a) => typeof a?.url === 'string' && /^SUSE-SU-/.test(a?.label) && !seen.has(a.label) && seen.add(a.label),
+  );
+}
 // Same rule as the API: at most 32 characters.
 export const validId = (id) => typeof id === 'string' && id.length <= 32 && /^CVE-\d{4}-\d{4,}$/.test(id);
 export function vendorURL(product, id) {

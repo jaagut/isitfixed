@@ -205,3 +205,154 @@ test('home: every visitor sees what Is It Fixed is for', () => {
   assert.match(renderHome(ctx({ state: defaultState() }), null), tagline);
   assert.match(renderHome(ctx(), null), tagline);
 });
+
+test('each row links the vendor CVE page with its advisories', () => {
+  const html = renderCase(c, ctx());
+  const rhel = html.match(/data-row="rhel9">[\s\S]*?<div class="fix-summary">/)[0];
+  assert.match(
+    rhel,
+    /<\/details><a href="https:\/\/access\.redhat\.com\/security\/cve\/CVE-2024-1086" [^>]*>Red Hat CVE page ↗<\/a><\/div>/,
+  );
+  const windows = html.match(/data-row="windows11">[\s\S]*?<div class="fix-summary">/)[0];
+  assert.match(
+    windows,
+    /<div class="row-advisories"><a href="https:\/\/msrc\.microsoft\.com\/update-guide\/vulnerability\/CVE-2024-1086" [^>]*>Microsoft CVE page ↗<\/a><\/div>/,
+  );
+});
+
+const ubuntuCase = (evidence, sources = { ubuntu: { checked: NOW } }) => ({
+  ...structuredClone(c),
+  products: ['ubuntu2404'],
+  vendorData: { id: ID, evidence: { ubuntu2404: evidence }, sources },
+});
+const ubuntuEntry = (name, status, extra = {}) => ({
+  name,
+  status,
+  affected: [],
+  unaffected: [],
+  fix: [],
+  mitigation: [],
+  links: [],
+  source: 'Ubuntu security tracker',
+  ...extra,
+});
+const rowHTML = (html, id) => html.match(new RegExp(`data-row="${id}">[\\s\\S]*?<div class="fix-summary">`))[0];
+
+test('mitigations cite Red Hat VEX advisories only; other vendors cite their CVE page', () => {
+  const html = renderCase(
+    ubuntuCase([
+      ubuntuEntry('openssh', 'fixed', {
+        fix: ['openssh 1:9.6p1-3ubuntu13.3'],
+        links: ['https://ubuntu.com/security/notices/USN-6859-1'],
+        mitigation: ['Set LoginGraceTime to 0.'],
+      }),
+    ]),
+    ctx(),
+  );
+  assert.match(
+    html,
+    /Set LoginGraceTime to 0\.<\/p><p class="fact-source">Source: <a href="https:\/\/ubuntu\.com\/security\/CVE-2024-1086" [^>]*>Ubuntu CVE page ↗<\/a><\/p>/,
+  );
+  assert.match(rowHTML(html, 'ubuntu2404'), />USN-6859-1 ↗<\/a>/, 'the USN stays a row advisory');
+});
+
+test('row explanations: who has not decided, what is still affected, why there is no data', () => {
+  const triage = renderCase(
+    ubuntuCase([ubuntuEntry('sqlite3', 'unknown', { note: 'Not yet triaged by Ubuntu' })]),
+    ctx(),
+  );
+  // The vendor's own note says who has not decided; no second, generic line.
+  assert.match(rowHTML(triage, 'ubuntu2404'), /Inconclusive<\/span><small>Not yet triaged by Ubuntu<\/small>/);
+  assert.doesNotMatch(triage, /Ubuntu has not assessed this yet/);
+  assert.doesNotMatch(triage, /Available evidence does not establish status/);
+  const partial = renderCase(
+    ubuntuCase([
+      ubuntuEntry('linux', 'fixed', { fix: ['linux 6.8.0-100.100'] }),
+      ubuntuEntry('linux-azure', 'affected', { note: 'Fix pending in 6.8.0-1052.55; not yet released' }),
+      ubuntuEntry('linux-hwe-6.11', 'affected', { note: 'Ubuntu will not fix this: end of life' }),
+    ]),
+    ctx(),
+  );
+  const row = rowHTML(partial, 'ubuntu2404');
+  assert.match(row, /<small>Still affected: linux-azure<\/small>/);
+  assert.match(row, /<small>linux-azure: Fix pending in 6\.8\.0-1052\.55; not yet released<\/small>/);
+  assert.match(row, /<small>linux-hwe-6\.11: Ubuntu will not fix this: end of life<\/small>/);
+  assert.doesNotMatch(partial, /Older builds/);
+  // Windows: the fixed build is the answer; nothing is listed as still affected.
+  assert.doesNotMatch(rowHTML(renderCase(c, ctx()), 'windows11'), /Still affected/);
+  const missing = renderCase(
+    ubuntuCase([], { ubuntu: { checked: NOW, notPublished: 'Ubuntu has not published a tracker entry.' } }),
+    ctx(),
+  );
+  assert.match(rowHTML(missing, 'ubuntu2404'), /No data<\/span><small>Ubuntu has not published this CVE yet<\/small>/);
+});
+
+test('notes: first two shown, the rest unfold; vendor text is escaped', () => {
+  const notes = ['<b>one</b>', 'two', 'three', 'four'];
+  const html = renderCase(ubuntuCase(notes.map((n, i) => ubuntuEntry(`pkg${i}`, 'affected', { note: n }))), ctx());
+  const row = rowHTML(html, 'ubuntu2404');
+  assert.match(row, /<small>pkg0: &lt;b&gt;one&lt;\/b&gt;<\/small><small>pkg1: two<\/small>/);
+  assert.match(
+    row,
+    /<details class="advisory-list" data-detail="ubuntu2404:notes"><summary aria-label="Show 2 more notes">\+2 more<\/summary><div><span>pkg2: three<\/span><span>pkg3: four<\/span><\/div><\/details>/,
+  );
+  assert.doesNotMatch(row, /<b>one/);
+});
+
+test('SLES rows and the SUSE source card list SUSE-SU updates, not Liberty Linux RHSA advisories', () => {
+  const suse = (n) => ({
+    url: `https://www.suse.com/support/update/announcement/2026/suse-su-2026000${n}-1/`,
+    label: `SUSE-SU-2026:000${n}-1`,
+  });
+  const sles = {
+    ...structuredClone(c),
+    products: ['sles15'],
+    vendorData: {
+      id: ID,
+      evidence: {
+        sles15: [
+          {
+            name: 'kernel-default-5.14.21-150500.55.49.1 as component of SUSE Linux Enterprise Server 15 SP5',
+            status: 'fixed',
+            fix: ['kernel-default-5.14.21-150500.55.49.1 as component of SUSE Linux Enterprise Server 15 SP5'],
+            affected: [],
+            unaffected: [],
+            mitigation: [],
+            links: [],
+            source: 'SUSE CSAF',
+          },
+        ],
+      },
+      sources: {
+        sles: {
+          checked: NOW,
+          url: 'https://ftp.suse.com/pub/projects/security/csaf-vex/2024/cve-2024-1086.json',
+          advisories: [
+            { url: 'https://access.redhat.com/errata/RHSA-2026:93412', label: 'RHSA-2026:93412' },
+            suse(1),
+            suse(2),
+            suse(3),
+            { url: 'javascript:alert(1)', label: 'SUSE-SU-2026:0004-1' },
+          ],
+        },
+      },
+    },
+  };
+  const html = renderCase(sles, ctx());
+  const row = rowHTML(html, 'sles15');
+  assert.match(
+    row,
+    /SUSE advisories \(all products\): <a [^>]*>SUSE-SU-2026:0001-1 ↗<\/a>, <a [^>]*>SUSE-SU-2026:0002-1 ↗<\/a>/,
+  );
+  assert.match(row, /aria-label="Show 1 more advisory">\+1<\/summary><div><a [^>]*>SUSE-SU-2026:0003-1 ↗<\/a><\/div>/);
+  assert.match(
+    row,
+    /<\/details><a href="https:\/\/www\.suse\.com\/security\/cve\/CVE-2024-1086\.html" [^>]*>SUSE CVE page ↗<\/a><\/div>/,
+  );
+  assert.doesNotMatch(row, /RHSA|javascript:/);
+  const card = html.match(/<article class="source-card[^"]*"><header><h3>SUSE[\s\S]*?<\/article>/)[0];
+  assert.match(card, /SUSE security updates in source document \(4\)/);
+  assert.match(card, /Not listed \(not SUSE Linux Enterprise updates\): 1 RHSA advisory for SUSE Liberty Linux\./);
+  assert.doesNotMatch(card, />RHSA-2026:93412/);
+  assert.doesNotMatch(card, /href="javascript/);
+});
