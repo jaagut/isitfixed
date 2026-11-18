@@ -975,6 +975,13 @@ span.product-name {
   display: flex;
   justify-content: space-between;
 }
+/* Keep the pointer off the cards when an overlay scrollbar appears or disappears. */
+#case-list,
+#archived-list {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  padding-inline-end: 10px;
+}
 #case-list {
   min-height: 0;
   overflow-y: auto;
@@ -1314,7 +1321,7 @@ span.product-name {
 }
 .status-seg {
   --seg: var(--unknown-solid);
-  --n: 1;
+  container-type: inline-size;
   display: flex;
   flex: 1 1 0%;
   flex-direction: column;
@@ -1333,81 +1340,124 @@ span.product-name {
   --seg: var(--unaffected-solid);
 }
 .seg-fill {
+  position: relative;
   display: flex;
   align-items: center;
   height: 4px;
   overflow: hidden;
-  /* Equal 1px lines at the start of every slot (one per OS version), also between statuses. */
-  background:
-    linear-gradient(90deg, var(--bar-line) 1px, transparent 0) 0 0 / calc(100% / var(--n)) 100%,
-    var(--seg);
-  transition: height 140ms ease;
+  background: var(--seg);
+  transition:
+    height 140ms ease,
+    border-radius 140ms ease;
 }
 .status-seg:first-child .seg-fill {
-  background-position-x: -1px;
-  border-radius: 2px 0 0 2px;
+  border-start-start-radius: 2px;
+  border-end-start-radius: 2px;
 }
 .status-seg:last-child .seg-fill {
-  border-radius: 0 2px 2px 0;
+  border-start-end-radius: 2px;
+  border-end-end-radius: 2px;
 }
-.status-seg:only-child .seg-fill {
-  border-radius: 2px;
+.seg-ticks {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  transition: visibility 0s 140ms;
 }
-/* The status name lives in the bar; it shows once the bar is as tall as the logo row. */
-.seg-label {
+.seg-ticks > span,
+.stack-logo {
+  flex: 1 1 0;
   min-width: 0;
-  padding: 0 6px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+}
+/* Draw one line at the start of each slot after the first. Each status boundary is drawn separately. */
+.seg-ticks > span + span,
+.stack-logo + .stack-logo,
+.status-seg + .status-seg .stack-logo:first-child,
+.status-seg + .status-seg .seg-fill {
+  box-shadow: inset 1px 0 var(--bar-line);
+}
+.seg-label {
+  position: relative;
+  min-width: 0;
+  padding: 0 5px;
   white-space: nowrap;
   font: 700 10px/1 var(--font-sans);
   color: var(--bar-label);
   opacity: 0;
   transition: opacity 100ms ease;
 }
-/* Open card: the thick bar shows only the status boundaries; the per-version lines move up to
-   the logo row, so they never cut through the status name. */
+.seg-short-label,
+.seg-symbol {
+  display: none;
+}
+@container (width < 78px) {
+  .seg-label {
+    padding-inline: 3px;
+  }
+  .fix_available .seg-full-label,
+  .unaffected .seg-full-label,
+  .inconclusive .seg-full-label {
+    display: none;
+  }
+  .fix_available .seg-short-label,
+  .unaffected .seg-short-label,
+  .inconclusive .seg-short-label {
+    display: inline;
+  }
+}
+@container (width < 56px) {
+  .affected .seg-full-label,
+  .unknown .seg-full-label {
+    display: none;
+  }
+  .affected .seg-short-label,
+  .unknown .seg-short-label {
+    display: inline;
+  }
+}
+@container (width < 21px) {
+  .seg-label {
+    padding-inline: 0;
+    margin-inline: auto;
+  }
+  .status-seg .seg-short-label {
+    display: none;
+  }
+  .seg-symbol {
+    display: inline;
+  }
+}
+/* The logo row carries the per-version lines when expanded. The lower bar keeps just the status boundaries. */
 .seg-logos {
-  position: relative;
   display: flex;
-  /* Each logo sits centred over its slot: spread out with room to spare, overlapping when tight. */
-  justify-content: space-around;
   max-height: 0;
-  padding: 0;
-  /* Two tones: a tint of the status colour behind the logos, the solid colour in the bar below. */
-  background:
-    linear-gradient(90deg, var(--bar-line) 1px, transparent 0) 0 0 / calc(100% / var(--n)) 100%,
-    color-mix(in srgb, var(--seg) 22%, transparent);
+  background: color-mix(in srgb, var(--seg) 22%, transparent);
   opacity: 0;
   visibility: hidden;
   overflow: hidden;
   transition:
     max-height 140ms ease,
-    padding 140ms ease,
     opacity 100ms ease,
     visibility 0s 140ms;
 }
 .status-seg:first-child .seg-logos {
-  background-position-x: -1px, 0;
-  border-top-left-radius: 6px;
+  border-start-start-radius: 6px;
 }
 .status-seg:last-child .seg-logos {
-  border-top-right-radius: 6px;
+  border-start-end-radius: 6px;
 }
 .case-entry:hover .seg-logos,
 .home-case-entry:hover .seg-logos,
 .case-entry:has(:focus-visible) .seg-logos,
 .home-case-entry:has(:focus-visible) .seg-logos,
 .status-meter.expanded .seg-logos {
-  max-height: 24px;
-  padding: 2px 0 3px;
+  max-height: 21px;
   opacity: 1;
   visibility: visible;
   /* Clipped while it grows, then visible so the version tooltips are not cut off. */
   overflow: visible;
   transition:
     max-height 160ms ease 120ms,
-    padding 160ms ease 120ms,
     opacity 120ms ease 120ms,
     visibility 0s 120ms,
     overflow 0s 280ms;
@@ -1419,11 +1469,17 @@ span.product-name {
 .home-case-entry:has(:focus-visible) .seg-fill,
 .status-meter.expanded .seg-fill {
   height: 18px;
-  background: var(--seg);
+  border-start-start-radius: 0;
+  border-start-end-radius: 0;
   transition-delay: 120ms;
 }
-.status-seg + .status-seg .seg-fill {
-  box-shadow: inset 1px 0 0 var(--bar-line);
+.case-entry:hover .seg-ticks,
+.home-case-entry:hover .seg-ticks,
+.case-entry:has(:focus-visible) .seg-ticks,
+.home-case-entry:has(:focus-visible) .seg-ticks,
+.status-meter.expanded .seg-ticks {
+  visibility: hidden;
+  transition-delay: 120ms;
 }
 .case-entry:hover .seg-label,
 .home-case-entry:hover .seg-label,
@@ -1435,21 +1491,22 @@ span.product-name {
 }
 .status-meter.expanded .seg-logos,
 .status-meter.expanded .seg-fill,
-.status-meter.expanded .seg-label {
+.status-meter.expanded .seg-label,
+.status-meter.expanded .seg-ticks {
   transition-delay: 0s;
 }
 .stack-logo {
   position: relative;
-  display: inline-grid;
-  place-items: center;
-  flex: 0 1 16px;
-  min-width: 2px;
-  height: 16px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 21px;
 }
 .stack-logo:hover {
   z-index: 1;
 }
 .stack-logo .vendor-logo {
+  flex: 0 0 13px;
   width: 13px;
   height: 13px;
 }

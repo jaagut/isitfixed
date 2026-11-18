@@ -44,10 +44,12 @@ function statusSegment(status, products) {
   const discs = products.map(
     (p, i) => `<span class="stack-logo" data-tip="${esc(versions[i])}">${logo(p.family)}</span>`,
   );
+  const ticks = '<span></span>'.repeat(products.length);
+  const compact = status === 'fix_available' ? 'Fix' : statusSymbols[status];
   return [
     `<span class="status-seg ${status}" data-flex="${products.length}" role="group" aria-label="${esc(`${labels[status]}: ${versions.join(', ')}`)}">`,
     `<span class="seg-logos" aria-hidden="true">${discs.join('')}</span>`,
-    `<span class="seg-fill"><span class="seg-label">${labels[status]}</span></span>`,
+    `<span class="seg-fill" aria-hidden="true" title="${labels[status]}"><span class="seg-ticks">${ticks}</span><span class="seg-label"><span class="seg-full-label">${labels[status]}</span><span class="seg-short-label">${compact}</span><span class="seg-symbol">${statusSymbols[status]}</span></span></span>`,
     '</span>',
   ].join('');
 }

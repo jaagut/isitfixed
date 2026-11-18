@@ -78,7 +78,8 @@ test('status bar segments name their status in the bar, with one logo per OS ver
   const segments = [...bar.matchAll(/class="status-seg ([a-z_]+)" data-flex="(\d+)"/g)].map((m) => [m[1], m[2]]);
   assert.deepEqual(segments, [['fix_available', '1']]);
   assert.match(bar, /aria-label="Fix available: Ubuntu 24.04"/);
-  assert.match(bar, /<span class="seg-fill"><span class="seg-label">Fix available<\/span><\/span>/);
+  assert.match(bar, /class="seg-full-label">Fix available<\/span>/);
+  assert.match(bar, /class="seg-short-label">Fix<\/span>/);
   assert.match(bar, /<span class="stack-logo" data-tip="Ubuntu 24.04"><img[^>]*logo-ubuntu/);
   assert.match(bar, /data-checked-at="1234"/);
   assert.doesNotMatch(statusBar(c), /data-checked-at/);
@@ -87,5 +88,6 @@ test('status bar segments name their status in the bar, with one logo per OS ver
   // With nothing else known, "No data" is shown: one logo per version, each with its own tooltip.
   const unknown = statusBar({ ...c, products: ['rhel9', 'rhel10'], vendorData: undefined });
   assert.match(unknown, /class="status-seg unknown" data-flex="2"/);
+  assert.match(unknown, /class="seg-ticks"><span><\/span><span><\/span><\/span>/);
   assert.match(unknown, /data-tip="RHEL 9"><img[^>]*><\/span><span class="stack-logo" data-tip="RHEL 10">/);
 });

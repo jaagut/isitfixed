@@ -239,14 +239,9 @@ const context = () => ({
   groupOverride,
   now: Date.now(),
 });
-// Status bar segments are proportional to their number of OS versions, one slot per version
-// (--n drives the slot lines). Set from data-flex: inline style attributes are blocked by the CSP.
+// Set the segment width from its OS count without inline HTML styles.
 function applyBars(root) {
-  for (const el of root.querySelectorAll('[data-flex]')) {
-    const n = Number(el.dataset.flex) || 1;
-    el.style.flex = `${n} 1 0%`;
-    el.style.setProperty('--n', String(n));
-  }
+  for (const el of root.querySelectorAll('[data-flex]')) el.style.flex = `${Number(el.dataset.flex) || 1} 1 0%`;
 }
 
 // Share sheet where available (mobile, some desktops); otherwise copy the link.
