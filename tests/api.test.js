@@ -73,3 +73,53 @@ test('progressive case results decode across chunk boundaries', async () => {
     globalThis.fetch = original;
   }
 });
+
+test('server config: defaults when unavailable, strict types, https-only source link', async () => {
+  const { fetchConfig, normalizeConfig, DEFAULT_CONFIG } = await import('../src/api.js');
+  const original = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => {
+      throw TypeError('offline');
+    };
+    assert.deepEqual(await fetchConfig(), { ...DEFAULT_CONFIG, legal: { imprint: false, privacy: false } });
+    globalThis.fetch = async (url) => {
+      assert.equal(url, '/api/config');
+      return Response.json({
+        version: '1.1.0',
+        manualRefresh: true,
+        tmds: false,
+        legal: { imprint: true, privacy: 'yes' },
+        sourceUrl: 'https://github.com/jaagut/cve-viewer',
+        retentionDays: 10,
+      });
+    };
+    assert.deepEqual(await fetchConfig(), {
+      version: '1.1.0',
+      manualRefresh: true,
+      tmds: false,
+      legal: { imprint: true, privacy: false },
+      sourceUrl: 'https://github.com/jaagut/cve-viewer',
+      retentionDays: 10,
+    });
+  } finally {
+    globalThis.fetch = original;
+  }
+  assert.equal(normalizeConfig({ sourceUrl: 'javascript:alert(1)' }).sourceUrl, null);
+  assert.equal(normalizeConfig({ manualRefresh: 'true' }).manualRefresh, false);
+  assert.equal(normalizeConfig({}).tmds, true);
+});
+
+test('API errors use the detail text; 429 says when to retry', async () => {
+  const { streamCase } = await import('../src/api.js');
+  const original = globalThis.fetch;
+  try {
+    globalThis.fetch = async () =>
+      Response.json({ detail: 'Manual refresh is disabled on this server.' }, { status: 403 });
+    await assert.rejects(() => streamCase('CVE-2026-98432', [], true, () => {}), /Manual refresh is disabled/);
+    globalThis.fetch = async () =>
+      Response.json({ detail: 'Too many lookups.' }, { status: 429, headers: { 'Retry-After': '120' } });
+    await assert.rejects(() => fetchCase('CVE-2026-98432', []), /Too many lookups\. Try again in 2 min\./);
+  } finally {
+    globalThis.fetch = original;
+  }
+});

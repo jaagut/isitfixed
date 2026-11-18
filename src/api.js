@@ -5,31 +5,71 @@ const families = (products) =>
   [
     ...new Set(products.map((id) => PRODUCTS.find((p) => p.id === id)?.family).filter((f) => implemented.has(f))),
   ].sort();
-async function request(path, options = {}) {
+const url = (path) => `${API_BASE.replace(/\/$/, '')}${path}`;
+const OFFLINE =
+  'CVE API unavailable. Check your connection or backend configuration. Saved evidence is still available.';
+// User-facing error for a failed response: the API's `detail`, plus when to retry after a 429.
+export async function responseError(response) {
+  let message = `CVE API returned HTTP ${response.status}.`;
+  try {
+    const body = await response.json();
+    if (typeof body.detail === 'string') message = body.detail;
+  } catch {
+    /* Non-JSON error body: keep the HTTP status message. */
+  }
+  const retry = Number(response.headers?.get?.('Retry-After'));
+  if (response.status === 429 && retry > 0)
+    message += ` Try again in ${retry < 90 ? `${Math.ceil(retry)} s` : `${Math.ceil(retry / 60)} min`}.`;
+  const error = Error(message);
+  error.status = response.status;
+  return error;
+}
+async function request(path, options = {}, timeout = 180000) {
   let response;
   try {
-    response = await fetch(`${API_BASE.replace(/\/$/, '')}${path}`, {
-      ...options,
-      signal: AbortSignal.timeout(180000),
-      cache: 'no-store',
-    });
+    response = await fetch(url(path), { ...options, signal: AbortSignal.timeout(timeout), cache: 'no-store' });
   } catch {
-    throw Error(
-      'CVE API unavailable. Check your connection or backend configuration. Saved evidence is still available.',
-    );
+    throw Error(OFFLINE);
   }
-  if (!response.ok) {
-    let message = `CVE API returned HTTP ${response.status}.`;
-    try {
-      const body = await response.json();
-      if (typeof body.detail === 'string') message = body.detail;
-    } catch {
-      /* Non-JSON error body: keep the HTTP status message. */
-    }
-    throw Error(message);
-  }
+  if (!response.ok) throw await responseError(response);
   return response.json();
 }
+
+// Server settings (GET /api/config). Unknown or missing values fall back to these.
+export const DEFAULT_CONFIG = Object.freeze({
+  version: null,
+  manualRefresh: false,
+  tmds: true,
+  legal: Object.freeze({ imprint: false, privacy: false }),
+  sourceUrl: null,
+  retentionDays: null,
+});
+export function normalizeConfig(raw) {
+  const c = raw && typeof raw === 'object' ? raw : {};
+  let sourceUrl = null;
+  try {
+    if (typeof c.sourceUrl === 'string' && new URL(c.sourceUrl).protocol === 'https:') sourceUrl = c.sourceUrl;
+  } catch {
+    /* Not a URL: no source link. */
+  }
+  return {
+    version: typeof c.version === 'string' ? c.version : null,
+    manualRefresh: c.manualRefresh === true,
+    tmds: c.tmds !== false,
+    legal: { imprint: c.legal?.imprint === true, privacy: c.legal?.privacy === true },
+    sourceUrl,
+    retentionDays: Number.isFinite(c.retentionDays) ? c.retentionDays : null,
+  };
+}
+// Never fails: an unreachable or old backend yields the defaults.
+export async function fetchConfig() {
+  try {
+    return normalizeConfig(await request('/config', {}, 10000));
+  } catch {
+    return normalizeConfig(null);
+  }
+}
+
 export async function fetchCase(id, products, force = false) {
   const params = new URLSearchParams({ families: families(products).join(','), refresh: String(force) });
   const data = await request(`/cves/${encodeURIComponent(id)}?${params}`);
@@ -63,11 +103,16 @@ export async function syncWatches(cases) {
 
 export async function streamCase(id, products, force, onArea) {
   const params = new URLSearchParams({ families: families(products).join(','), refresh: String(force) });
-  const response = await fetch(`${API_BASE.replace(/\/$/, '')}/cves/${encodeURIComponent(id)}/stream?${params}`, {
-    signal: AbortSignal.timeout(180000),
-    cache: 'no-store',
-  });
-  if (!response.ok) throw Error(`CVE API returned HTTP ${response.status}`);
+  let response;
+  try {
+    response = await fetch(url(`/cves/${encodeURIComponent(id)}/stream?${params}`), {
+      signal: AbortSignal.timeout(180000),
+      cache: 'no-store',
+    });
+  } catch {
+    throw Error(OFFLINE);
+  }
+  if (!response.ok) throw await responseError(response);
   const reader = response.body.getReader(),
     decoder = new TextDecoder();
   let buffer = '',

@@ -6,22 +6,24 @@
     <meta name="theme-color" content="#173c32" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#111714" media="(prefers-color-scheme: dark)" />
     <title>CVE Desk — your vulnerability workspace</title>
-    <script src="src/theme.js"></script>
-    <link rel="stylesheet" href="style.css" />
+    <script src="/src/theme.js"></script>
+    <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
     <aside class="sidebar">
       <a class="brand" href="/"><span class="brand-icon">c/</span> CVE Desk</a>
-      <button id="new-case" class="primary full">＋ Open a case <kbd>N</kbd></button>
+      <button type="button" id="new-case" class="primary full">＋ Open a case <kbd>N</kbd></button>
       <label class="search">
-        <span>⌕</span>
+        <span aria-hidden="true">⌕</span>
         <input id="search" placeholder="Find a case…" aria-label="Find a case" />
       </label>
       <div class="sidebar-label">YOUR CASES <span id="case-count">0</span></div>
       <nav id="case-list" aria-label="Saved cases"></nav>
       <nav id="archived-list" aria-label="Archived cases" hidden></nav>
       <div class="sidebar-bottom">
-        <button id="settings-button">⚙ Settings</button>
+        <button type="button" id="settings-button" aria-label="Settings">
+          <span aria-hidden="true">⚙</span><span class="settings-label">Settings</span>
+        </button>
         <p><span class="dot safe"></span> Cases stored on this device</p>
       </div>
       <div
@@ -38,11 +40,23 @@
     </aside>
     <div class="workspace">
       <main id="main"></main>
+      <footer class="site-footer">
+        <p class="site-disclaimer">
+          CVE Desk is an informational tool. Data comes from public vendor sources and may be incomplete, delayed or
+          wrong. No warranty — use at your own discretion and verify with the vendor before acting. Not affiliated with
+          or endorsed by Red Hat, SUSE, Canonical, Debian, Alpine, Microsoft or Trend Micro.
+        </p>
+        <ul class="footer-links">
+          <li data-legal="imprint" hidden><a href="/imprint">Imprint</a></li>
+          <li data-legal="privacy" hidden><a href="/privacy">Privacy</a></li>
+          <li data-source hidden><a href="/" target="_blank" rel="noopener noreferrer">Source code</a></li>
+        </ul>
+      </footer>
     </div>
-    <dialog id="add-dialog">
+    <dialog id="add-dialog" aria-labelledby="add-title">
       <form id="add-form">
         <div class="dialog-heading">
-          <h2>Open a case</h2>
+          <h2 id="add-title">Open a case</h2>
           <button type="button" data-close="add-dialog" aria-label="Close">×</button>
         </div>
         <p>One vulnerability. Just the products you care about. Shortcut: N or Ctrl+K.</p>
@@ -60,60 +74,102 @@
         <button class="primary full" type="submit">Open case →</button>
       </form>
     </dialog>
-    <dialog id="settings-dialog">
+    <dialog id="settings-dialog" aria-labelledby="settings-title">
       <div class="dialog-heading">
-        <h2>Settings</h2>
-        <button data-close="settings-dialog" aria-label="Close">×</button>
+        <h2 id="settings-title">Settings</h2>
+        <button type="button" data-close="settings-dialog" aria-label="Close">×</button>
       </div>
-      <h3>Operating systems</h3>
-      <p class="settings-hint">
-        Drag to set the order cases use. Selected versions are the defaults for new cases; each case can change its own
-        selection.
-      </p>
-      <div id="default-products" class="product-choices sortable"></div>
-      <hr />
-      <h3>Severity</h3>
-      <label class="select-row">
-        Score shown for cases
-        <select id="cvss-version"></select>
-      </label>
-      <p class="settings-hint">
-        If a CVE has no score in this version, the next available version is shown and labelled.
-      </p>
-      <hr />
-      <h3>Appearance</h3>
-      <label class="select-row">
-        Theme
-        <select id="theme">
-          <option value="system">System (default)</option>
-          <option value="light">Light</option>
-          <option value="dark">Dark</option>
-        </select>
-      </label>
-      <hr />
-      <label class="toggle">
-        <input type="checkbox" id="auto-refresh" />
-        Check for case updates every hour while open
-      </label>
-      <button id="notifications">Enable desktop notifications</button>
-      <p class="muted">
-        Updated cases move to the top of the sidebar with a New indicator. Browser notifications require permission and
-        HTTPS or localhost.
-      </p>
-      <hr />
-      <div class="actions">
-        <button id="export">Export workspace ↓</button>
-        <label class="button">
-          Restore backup ↑
-          <input id="restore" type="file" accept="application/json,.json" hidden />
+      <section class="settings-section" aria-labelledby="settings-appearance">
+        <h3 id="settings-appearance">Appearance</h3>
+        <label class="select-row">
+          Theme
+          <select id="theme">
+            <option value="system">System (default)</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
         </label>
-      </div>
-      <p class="muted">
-        Backups include cases, source snapshots, product choices. Browser storage can be cleared; export a backup to
-        keep a copy.
+      </section>
+      <section class="settings-section" aria-labelledby="settings-os">
+        <h3 id="settings-os">Operating systems</h3>
+        <p class="settings-hint">
+          Drag to set the order cases use. Selected versions are the defaults for new cases; each case can change its
+          own selection.
+        </p>
+        <div id="default-products" class="product-choices sortable"></div>
+      </section>
+      <section class="settings-section" aria-labelledby="settings-severity">
+        <h3 id="settings-severity">Severity</h3>
+        <label class="select-row">
+          Score shown for cases
+          <select id="cvss-version"></select>
+        </label>
+        <p class="settings-hint">
+          If a CVE has no score in this version, the next available version is shown and labelled.
+        </p>
+      </section>
+      <section class="settings-section" aria-labelledby="settings-updates">
+        <h3 id="settings-updates">Updates &amp; notifications</h3>
+        <label class="toggle">
+          <input type="checkbox" id="auto-refresh" />
+          Check cases every hour while CVE Desk is open
+        </label>
+        <p class="settings-hint">
+          The server also re-checks your cases hourly while this tab is closed. You are told only about changes you can
+          act on: a new status, a newly published fix or mitigation, new Trend Micro support, or a rejected CVE. Source
+          timestamps, notes and advisory edits stay quiet.
+        </p>
+        <p class="settings-hint">
+          Changed cases move to the top of the sidebar with a <strong>New</strong> marker and the changed rows are
+          highlighted. Desktop notifications are optional and need permission (HTTPS or localhost).
+        </p>
+        <div class="settings-row">
+          <button type="button" id="notifications">Enable desktop notifications</button>
+          <span id="notification-status" class="muted" role="status"></span>
+        </div>
+      </section>
+      <section class="settings-section" aria-labelledby="settings-tmds">
+        <h3 id="settings-tmds">Trend Micro Deep Security</h3>
+        <label class="toggle">
+          <input type="checkbox" id="tmds-toggle" />
+          Show TMDS Agent and Kernel Support Package support
+        </label>
+        <p class="settings-hint" id="tmds-hint">
+          Matches kernel fixes against the kernels bundled in Deep Security Agent 20 LTS and the published Kernel
+          Support Package list. Turn this off if you do not use Deep Security: CVE Desk then hides all TMDS details and
+          stops loading the inventory.
+        </p>
+        <p class="settings-hint" id="tmds-server-off" hidden>TMDS support data is turned off on this server.</p>
+      </section>
+      <section class="settings-section" aria-labelledby="settings-backup">
+        <h3 id="settings-backup">Backup</h3>
+        <div class="actions">
+          <button type="button" id="export">Export workspace ↓</button>
+          <label class="button">
+            Restore backup ↑
+            <input id="restore" type="file" accept="application/json,.json" hidden />
+          </label>
+        </div>
+        <p class="settings-hint">
+          Backups include cases, source snapshots and settings. Browser storage can be cleared; export a backup to keep
+          a copy.
+        </p>
+      </section>
+    </dialog>
+    <dialog id="disclaimer-dialog" aria-labelledby="disclaimer-title" aria-describedby="disclaimer-text">
+      <h2 id="disclaimer-title">Before you start</h2>
+      <p id="disclaimer-text">
+        CVE Desk is an informational tool. Data comes from public vendor sources and may be incomplete, delayed or
+        wrong. No warranty — use at your own discretion and verify with the vendor before acting. Not affiliated with or
+        endorsed by Red Hat, SUSE, Canonical, Debian, Alpine, Microsoft or Trend Micro.
       </p>
+      <p class="disclaimer-privacy">
+        Your cases and settings stay in this browser. Only CVE IDs and the OS vendors you check are sent to the server,
+        so it can keep them up to date. No cookies, no tracking.
+      </p>
+      <button type="button" id="disclaimer-accept" class="primary full">I understand</button>
     </dialog>
     <div id="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="src/app.js"></script>
+    <script type="module" src="/src/app.js"></script>
   </body>
 </html>

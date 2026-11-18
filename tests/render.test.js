@@ -1,0 +1,137 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { renderCase } from '../src/render/case.js';
+import { renderHome } from '../src/render/home.js';
+import { DEFAULT_CONFIG } from '../src/api.js';
+import { defaultState } from '../src/state.js';
+
+const ID = 'CVE-2024-1086';
+const NOW = Date.parse('2026-11-18T15:00:00Z');
+const kernel = 'kernel-0:5.14.0-427.13.1.el9_4.x86_64 as a component of Red Hat Enterprise Linux BaseOS (v. 9)';
+const c = {
+  id: ID,
+  products: ['rhel9', 'windows11'],
+  notes: '',
+  checked: NOW,
+  record: {
+    cveMetadata: { cveId: ID, state: 'PUBLISHED' },
+    containers: {
+      cna: {
+        title: 'Use-after-free in nf_tables',
+        affected: [{ product: 'Windows 11', defaultStatus: 'unaffected' }],
+      },
+    },
+  },
+  vendorData: {
+    id: ID,
+    evidence: {
+      rhel9: [
+        {
+          name: 'kernel',
+          status: 'fixed',
+          fix: [kernel],
+          affected: [],
+          unaffected: [],
+          mitigation: ['Blacklist the nf_tables module.'],
+          links: [
+            'https://access.redhat.com/errata/RHSA-2024:2394',
+            'https://access.redhat.com/errata/RHSA-2024:3138',
+            'https://access.redhat.com/errata/RHSA-2024:3306',
+          ],
+          source: 'Red Hat VEX',
+        },
+      ],
+    },
+    sources: {
+      rhel: { url: 'https://security.access.redhat.com/data/csaf/v2/vex/2024/cve-2024-1086.json', checked: NOW },
+    },
+  },
+};
+const inventory = {
+  data: {
+    products: {
+      rhel9: [
+        {
+          release: '20.0.3-31610',
+          architecture: 'x86_64',
+          kernels: ['5_14_0_427_13_1_el9_4_x86_64'],
+          download: 'https://files.trendmicro.com/agent.zip',
+        },
+      ],
+    },
+    checked: NOW,
+    ksp: {
+      products: {
+        rhel9: [
+          {
+            architecture: 'x86_64',
+            release: '20.0.3-36500',
+            filename: 'KernelSupport-RedHat_EL9-20.0.3-36500.x86_64.zip',
+            download:
+              'https://files.trendmicro.com/products/deepsecurity/en/20.0/KernelSupport-RedHat_EL9-20.0.3-36500.x86_64.zip',
+            kernels: [['5.14.0-427.13.1.el9_4.x86_64', 'default', '20.0.3-36000', false]],
+          },
+        ],
+      },
+      notes: ['To use KSP 20.0.1 or later, DSM 20.0.883+ and DSA 20.0.0-8453+ are required.'],
+      checked: NOW,
+    },
+  },
+  error: null,
+};
+const ctx = (extra = {}) => ({
+  state: { ...defaultState(), cases: [c] },
+  config: DEFAULT_CONFIG,
+  inventory,
+  tmdsOn: true,
+  busy: new Set(),
+  chooserOpen: false,
+  groupOverride: new Map(),
+  now: NOW,
+  ...extra,
+});
+
+test('case page: no inline styles or handlers (CSP), root-absolute logos', () => {
+  const html = renderCase(c, ctx()) + renderHome(ctx(), null);
+  assert.doesNotMatch(html, /\sstyle=/);
+  assert.doesNotMatch(html, /\son[a-z]+=/);
+  assert.doesNotMatch(html, /<script/);
+  assert.match(html, /src="\/assets\/logos\/redhat\.svg"/);
+});
+
+test('header: refresh only when the server allows it; status line links to Sources', () => {
+  assert.doesNotMatch(renderCase(c, ctx()), /id="refresh"/);
+  assert.match(renderCase(c, ctx({ config: { ...DEFAULT_CONFIG, manualRefresh: true } })), /id="refresh"/);
+  const html = renderCase(c, ctx());
+  assert.match(html, /href="#case-sources"[^>]*>.*Sources checked/);
+  assert.match(html, /<section class="sources-section" id="case-sources"/);
+  assert.doesNotMatch(html, /class="freshness"/);
+});
+
+test('advisories move to the assessment source line; mitigations show their source', () => {
+  const html = renderCase(c, ctx());
+  assert.doesNotMatch(html, /fact-label">Advisor/);
+  assert.match(
+    html,
+    /Source: <a [^>]*>Red Hat VEX ↗<\/a> · Advisories: <a [^>]*>RHSA-2024:2394 ↗<\/a>, <a [^>]*>RHSA-2024:3138 ↗<\/a> <span class="fact-more">\+1<\/span>/,
+  );
+  assert.match(html, /All 3 advisories/);
+  assert.match(
+    html,
+    /Blacklist the nf_tables module\.<\/p><p class="fact-source">Source: <a href="https:\/\/security\.access\.redhat\.com\/data\/csaf\/v2\/vex\/2024\/cve-2024-1086\.json"/,
+  );
+});
+
+test('TMDS fact with KSP and agent details; everything TMDS disappears when off', () => {
+  const on = renderCase(c, ctx());
+  assert.match(on, /KSP 20\.0\.3-36000 · Agent 20\.0\.3-31610/);
+  assert.match(on, /KernelSupport-RedHat_EL9-20\.0\.3-36500 ↗<\/a> — supports it since KSP 20\.0\.3-36000/);
+  assert.match(on, /Agent 20\.0\.3-31610 or later ↗/);
+  assert.match(on, /DSM 20\.0\.883\+/);
+  assert.match(on, /not a runtime certification/);
+  assert.match(on, /Kernel Support Packages<\/h3>/);
+  const off = renderCase(c, ctx({ tmdsOn: false }));
+  assert.doesNotMatch(off, /tmds|TMDS|Kernel Support/);
+  assert.doesNotMatch(renderHome(ctx({ tmdsOn: false }), null), /Deep Security/);
+  assert.match(renderHome(ctx(), null), /Trend Micro Deep Security/);
+});
