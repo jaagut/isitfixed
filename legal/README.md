@@ -18,21 +18,22 @@ The pages are enabled when `LEGAL_OPERATOR_NAME`, `LEGAL_OPERATOR_ADDRESS` and `
 `LEGAL_DIR` provides the file. Otherwise they return 404, the footer links are hidden (`/api/config` reports
 `"legal": {"imprint": false, "privacy": false}`) and a warning is logged at startup.
 
-| Variable                   | Placeholder                | Notes                                                                                                           |
-| -------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `LEGAL_OPERATOR_NAME`      | `{{operator_name}}`        | Required. Full name (or organisation and authorised representative)                                             |
-| `LEGAL_OPERATOR_ADDRESS`   | `{{operator_address}}`     | Required. Postal address; separate lines with real newlines or `\n`                                             |
-| `LEGAL_OPERATOR_EMAIL`     | `{{operator_email}}`       | Required. Contact e-mail address                                                                                |
-| `LEGAL_OPERATOR_PHONE`     | `{{operator_phone}}`       | Optional. The phone line is omitted when empty                                                                  |
-| `LEGAL_RESPONSIBLE_PERSON` | `{{responsible_person}}`   | Optional. Person responsible for content under § 18 Abs. 2 MStV and address                                     |
-| `LEGAL_HOSTING_PROVIDER`   | `{{hosting_provider}}`     | Optional. Name and address of the hosting provider (processor, Art. 28 GDPR); the section is omitted when empty |
-| `SITE_URL`                 | `{{site_url}}`             | Optional. Public URL of the instance                                                                            |
-| `SOURCE_URL`               | `{{source_url}}`           | Source code link; defaults to this repository                                                                   |
-| `LOG_RETENTION_DAYS`       | `{{log_retention_days}}`   | Default and maximum 14                                                                                          |
-| `WORKSPACE_TTL_DAYS`       | `{{workspace_ttl_days}}`   | Default 30                                                                                                      |
-| –                          | `{{cache_retention_days}}` | Fixed: 10 days after the last workspace stops watching a CVE                                                    |
-| `LEGAL_LAST_UPDATED`       | `{{last_updated}}`         | Defaults to the date of the bundled templates                                                                   |
-| `LEGAL_DIR`                | –                          | Directory with your own `imprint.html` and/or `privacy.html`                                                    |
+| Variable                   | Placeholder                | Notes                                                                                                                                |
+| -------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `LEGAL_OPERATOR_NAME`      | `{{operator_name}}`        | Required. Full name (or organisation and authorised representative)                                                                  |
+| `LEGAL_OPERATOR_ADDRESS`   | `{{operator_address}}`     | Required. Postal address; separate lines with real newlines or `\n`                                                                  |
+| `LEGAL_OPERATOR_EMAIL`     | `{{operator_email}}`       | Required. Contact e-mail address                                                                                                     |
+| `LEGAL_OPERATOR_PHONE`     | `{{operator_phone}}`       | Optional. The phone line is omitted when empty                                                                                       |
+| `LEGAL_RESPONSIBLE_PERSON` | `{{responsible_person}}`   | Optional. Person responsible for content under § 18 Abs. 2 MStV and address                                                          |
+| `LEGAL_HOSTING_PROVIDER`   | `{{hosting_provider}}`     | Optional. Name and address of the hosting provider (processor, Art. 28 GDPR); the section is omitted when empty                      |
+| `SITE_URL`                 | `{{site_url}}`             | Optional. Public URL of the instance                                                                                                 |
+| `SOURCE_URL`               | `{{source_url}}`           | Source code link; defaults to this repository                                                                                        |
+| `LOG_RETENTION_DAYS`       | `{{log_retention_days}}`   | Default and maximum 14                                                                                                               |
+| `WORKSPACE_TTL_DAYS`       | `{{workspace_ttl_days}}`   | Default 30                                                                                                                           |
+| –                          | `{{cache_retention_days}}` | Fixed: 10 days after the last workspace stops watching a CVE                                                                         |
+| `LEGAL_LAST_UPDATED`       | `{{last_updated}}`         | Defaults to the date of the bundled templates                                                                                        |
+| `LEGAL_ACCESS_LOGS`        | `{{access_logs}}` (block)  | `true` when the reverse proxy keeps access logs with shortened IPs; enables that privacy paragraph. Default `false` (no access logs) |
+| `LEGAL_DIR`                | –                          | Directory with your own `imprint.html` and/or `privacy.html`                                                                         |
 
 Example (Compose):
 

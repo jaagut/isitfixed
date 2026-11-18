@@ -35,8 +35,11 @@
   <p>
     Die Anwendung schreibt keine IP-Adressen und keine Workspace-IDs (siehe „Beobachtete Fälle auf dem Server“) in ihre
     Protokolle. Ihre Betriebsprotokolle enthalten nur technische Angaben wie Zeitpunkt, Art eines Fehlers oder den
-    Status von Datenabrufen. Werden auf dem vorgeschalteten Webserver Zugriffsprotokolle geführt, enthalten diese
-    IP-Adressen nur in gekürzter Form. Alle Protokolle werden nach spätestens {{log_retention_days}} Tagen gelöscht.
+    Status von Datenabrufen.
+    <!-- if:access_logs -->Der vorgeschaltete Webserver führt Zugriffsprotokolle (Zeitpunkt, angefragte Adresse,
+    Statuscode, Browserkennung); IP-Adressen werden darin nur gekürzt gespeichert (IPv4 auf die ersten drei Blöcke, IPv6
+    auf die ersten 48 Bit), sodass kein Rückschluss auf einen einzelnen Anschluss möglich ist.
+    <!-- endif:access_logs -->Alle Protokolle werden nach spätestens {{log_retention_days}} Tagen gelöscht.
   </p>
   <p>
     Zweck ist der sichere und stabile Betrieb, insbesondere die Erkennung und Behebung von Störungen und Missbrauch.
@@ -181,8 +184,11 @@
   <p>
     The application does not write IP addresses or workspace IDs (see “Watched cases on the server”) to its logs. Its
     operational logs only contain technical details such as timestamps, the kind of an error or the status of data
-    retrievals. If access logs are kept on the upstream web server, they contain IP addresses only in shortened form.
-    All logs are deleted after {{log_retention_days}} days at the latest.
+    retrievals.
+    <!-- if:access_logs -->The upstream web server keeps access logs (time, requested address, status code, browser
+    identifier); IP addresses are stored there only in shortened form (IPv4 truncated to the first three blocks, IPv6 to
+    the first 48 bits), so they cannot be traced to an individual connection.
+    <!-- endif:access_logs -->All logs are deleted after {{log_retention_days}} days at the latest.
   </p>
   <p>
     The purpose is secure and stable operation, in particular detecting and fixing faults and abuse. The legal basis is

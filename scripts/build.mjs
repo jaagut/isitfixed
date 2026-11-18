@@ -1,5 +1,4 @@
 // Production frontend build: minified, content-hashed bundles in dist/ (served by the backend via FRONTEND_DIR).
-/* global console */
 import { build } from 'esbuild';
 import { createHash } from 'node:crypto';
 import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';

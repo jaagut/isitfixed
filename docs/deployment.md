@@ -94,16 +94,17 @@ categories such as `DNS lookup failed` or `HTTP 503 from ubuntu.com`.
 
 ### Legal pages
 
-| Variable                   | Meaning                                                                                             |
-| -------------------------- | --------------------------------------------------------------------------------------------------- |
-| `LEGAL_OPERATOR_NAME`      | Operator name (required for the bundled templates).                                                 |
-| `LEGAL_OPERATOR_ADDRESS`   | Postal address (required). Use real newlines or a literal `\n`.                                     |
-| `LEGAL_OPERATOR_EMAIL`     | Contact email (required).                                                                           |
-| `LEGAL_OPERATOR_PHONE`     | Optional phone number.                                                                              |
-| `LEGAL_RESPONSIBLE_PERSON` | Optional person responsible for content (§ 18 Abs. 2 MStV).                                         |
-| `LEGAL_HOSTING_PROVIDER`   | Name and address of the hosting provider (privacy policy).                                          |
-| `LEGAL_LAST_UPDATED`       | Date shown as "last updated" (defaults to the template date).                                       |
-| `LEGAL_DIR`                | Directory with your own `imprint.html` / `privacy.html` body fragments, replacing the bundled ones. |
+| Variable                   | Meaning                                                                                                                          |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `LEGAL_OPERATOR_NAME`      | Operator name (required for the bundled templates).                                                                              |
+| `LEGAL_OPERATOR_ADDRESS`   | Postal address (required). Use real newlines or a literal `\n`.                                                                  |
+| `LEGAL_OPERATOR_EMAIL`     | Contact email (required).                                                                                                        |
+| `LEGAL_OPERATOR_PHONE`     | Optional phone number.                                                                                                           |
+| `LEGAL_RESPONSIBLE_PERSON` | Optional person responsible for content (§ 18 Abs. 2 MStV).                                                                      |
+| `LEGAL_HOSTING_PROVIDER`   | Name and address of the hosting provider (privacy policy).                                                                       |
+| `LEGAL_LAST_UPDATED`       | Date shown as "last updated" (defaults to the template date).                                                                    |
+| `LEGAL_ACCESS_LOGS`        | `true` if your reverse proxy keeps access logs (with shortened IPs); adds that paragraph to the privacy policy. Default `false`. |
+| `LEGAL_DIR`                | Directory with your own `imprint.html` / `privacy.html` body fragments, replacing the bundled ones.                              |
 
 `/imprint` and `/privacy` (with redirects from `/impressum` and `/datenschutz`) are enabled when name, address and
 email are set, or when `LEGAL_DIR` contains the page. Otherwise they return 404, `/api/config` reports them as

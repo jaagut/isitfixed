@@ -79,6 +79,7 @@ class Settings:
     legal_responsible_person: str = ""
     legal_hosting_provider: str = ""
     legal_dir: str | None = None
+    legal_access_logs: bool = False
     legal_last_updated: str = LEGAL_TEMPLATES_UPDATED
 
     def __post_init__(self):
@@ -128,7 +129,7 @@ class Settings:
         items("CORS_ORIGINS")
         text("HOST")
         number("PORT", 1)
-        for name in ("MANUAL_REFRESH", "TMDS_ENABLED", "API_DOCS", "HSTS"):
+        for name in ("MANUAL_REFRESH", "TMDS_ENABLED", "API_DOCS", "HSTS", "LEGAL_ACCESS_LOGS"):
             flag(name)
         for name in ("MAX_WATCHED_CVES", "MAX_CACHED_CVES", "MAX_WATCHES_PER_WORKSPACE", "WORKSPACE_TTL_DAYS"):
             number(name, 1)

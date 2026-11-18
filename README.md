@@ -16,8 +16,10 @@ place. The server keeps the vendor data current; your cases stay in your browser
   mitigations, with links to the vendor pages.
 - **Vendor evidence** from Red Hat (CSAF/VEX), SUSE (CSAF/VEX), Ubuntu, Debian and Alpine, plus Microsoft fixed builds
   from the CVE record. Missing evidence is shown as **No data**, never as "not affected".
-- **Stays current.** The server refreshes every watched CVE hourly, also while your browser is closed. Changed cases are
-  marked **New** and move to the top; optional desktop notifications.
+- **Stays current, without noise.** The server refreshes every watched CVE hourly, also while your browser is closed.
+  Cases are marked **New** (with optional desktop notifications) only for changes worth acting on: a status change, a
+  newly published fix or mitigation, TMDS Agent or Kernel Support Package support becoming available, or a rejected CVE.
+  Source timestamps alone never notify. A **Sources** section on each case shows when every source was last checked.
 - **Trend Micro Deep Security (TMDS) Agent matching.** For kernel fixes, shows whether the current LTS 20 agent or a
   Kernel Support Package lists the fixed kernel. Can be switched off per user or per server.
 - **Private by design.** No account, no cookies, no analytics, no third-party resources. Cases live in your browser's

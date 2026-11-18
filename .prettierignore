@@ -9,3 +9,4 @@ data/
 
 # Vendor logos are kept byte-for-byte as published
 assets/logos/*.svg
+backend/fixtures/

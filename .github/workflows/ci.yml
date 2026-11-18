@@ -1,8 +1,7 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
+  # Pushes to main run this workflow through publish.yml (workflow_call), which gates publishing on it.
   pull_request:
     branches: [main]
   workflow_call:

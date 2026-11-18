@@ -17,6 +17,8 @@ PAGES = {
 }
 _BLOCK = re.compile(r"<!--\s*if:(\w+)\s*-->(.*?)<!--\s*endif:\1\s*-->", re.S)
 _PLACEHOLDER = re.compile(r"\{\{\s*(\w+)\s*\}\}")
+# Template notes for operators (plain HTML comments) are not published.
+_COMMENT = re.compile(r"<!--(?!\s*(?:if|endif):).*?-->\s*", re.S)
 
 
 def render(template, values, raw=None):
@@ -30,6 +32,7 @@ def render(template, values, raw=None):
         name = match[1]
         return match[2] if values.get(name) or raw.get(name) else ""
 
+    template = _COMMENT.sub("", template)
     previous = None
     while previous != template:  # nested blocks
         previous, template = template, _BLOCK.sub(block, template)
@@ -63,6 +66,8 @@ class LegalPages:
             "cache_retention_days": str(RETENTION_DAYS),
             "workspace_ttl_days": str(settings.workspace_ttl_days),
             "last_updated": settings.legal_last_updated,
+            # Non-empty enables the access-log paragraph of the privacy policy.
+            "access_logs": "yes" if settings.legal_access_logs else "",
         }
 
     def fragment_path(self, page):
@@ -94,6 +99,7 @@ class LegalPages:
         values = {
             **self.values,
             "title": f"{PAGES[page]} – CVE Desk",
+            "heading": PAGES[page],
             "stylesheet": self.stylesheet,
             "imprint_page": enabled["imprint"],
             "privacy_page": enabled["privacy"],

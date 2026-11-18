@@ -580,3 +580,15 @@ def test_logging_rotates_into_log_dir_and_keeps_stdout_quiet(tmp_path, capsys):
         for handler in saved[0]:
             root.addHandler(handler)
         root.setLevel(saved[1])
+
+
+def test_bundled_privacy_policy_mentions_access_logs_only_when_enabled(setup):
+    clock, providers, path = setup
+    operator = dict(legal_operator_name="Op", legal_operator_address="Addr", legal_operator_email="op@example.com")
+    with TestClient(make_app(path, providers, clock, **operator)) as client:
+        page = client.get("/privacy").text
+        assert "Zugriffsprotokolle" not in page and "access logs" not in page
+        assert "<h1>" in page and "{{" not in page and "if:" not in page
+    with TestClient(make_app(path, providers, clock, legal_access_logs=True, **operator)) as client:
+        page = client.get("/privacy").text
+        assert "Zugriffsprotokolle" in page and "access logs" in page
