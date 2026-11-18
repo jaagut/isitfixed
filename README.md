@@ -83,6 +83,8 @@ pnpm lint && pnpm format:check
 uv run pre-commit install            # optional: run all checks on commit
 ```
 
+To skip the bulk reformatting commit in `git blame`, run `git config blame.ignoreRevsFile .git-blame-ignore-revs`.
+
 Backend tests cover explicit/shared watches, ten-day expiry, rewatching, restart persistence, closed-browser refresh, concurrent lookups, cooldown, failed sources, validation, private-file routing and vendor parsing. JavaScript tests cover assessment, source semantics, sidebar updates and the browser/API contract. `pnpm check` checks frontend syntax.
 
 Sources: [CVE Program](https://www.cve.org/), [Red Hat VEX](https://security.access.redhat.com/data/csaf/v2/vex/), [SUSE CSAF/VEX](https://ftp.suse.com/pub/projects/security/csaf-vex/), [Ubuntu tracker](https://ubuntu.com/security/cves), [Debian tracker](https://security-tracker.debian.org/tracker), [Alpine secdb](https://secdb.alpinelinux.org/). Red Hat and SUSE source data are licensed under CC BY 4.0; the cache normalizes those documents. See [logo attribution](assets/logos/README.md) and [fixture attribution](tests/fixtures/README.md). No analytics. Optional Google Fonts fall back to system fonts offline.
