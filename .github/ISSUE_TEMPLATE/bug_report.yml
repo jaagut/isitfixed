@@ -34,7 +34,7 @@ body:
     id: version
     attributes:
       label: Version or image tag
-      description: For example `1.1.0`, `main`, `sha-abc1234`, or the commit you run. Shown in /api/config.
+      description: For example `1.1.0`, `main`, `sha-abc1234`, or the commit you run. Shown in the page footer and in /api/health.
   - type: input
     id: browser
     attributes:

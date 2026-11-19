@@ -736,6 +736,16 @@ function renderFooter() {
   }
   $('.disclaimer-links').hidden = !config.legal.imprint && !config.legal.privacy;
   $('[data-source]').hidden = !config.sourceUrl;
+  // Build: "v1.1.0 · abc1234"; the commit links to the source repository when one is configured.
+  const { version, commit, sourceUrl } = config,
+    short = commit && esc(commit.slice(0, 7)),
+    commitHtml =
+      commit && sourceUrl
+        ? `<a href="${esc(`${sourceUrl.replace(/\/+$/, '')}/commit/${commit}`)}" target="_blank" rel="noopener noreferrer" title="Commit ${esc(commit)}">${short}</a>`
+        : short,
+    build = $('[data-build]');
+  build.innerHTML = [version && esc(`v${version}`), commitHtml].filter(Boolean).join(' · ');
+  build.hidden = !build.innerHTML;
   for (const a of document.querySelectorAll('[data-source-link]')) {
     a.hidden = !config.sourceUrl;
     if (config.sourceUrl) a.href = config.sourceUrl;

@@ -25,11 +25,15 @@ third-party assets.
 
 External uptime monitors should check for HTTP `200`.
 
+The body also carries `version` (from `pyproject.toml`) and `commit`, the full Git commit SHA the server was built from
+(`null` when unknown). `GET /api/config` returns both too, and the footer shows them as `v1.1.0 · abc1234`.
+
 ## `GET /api/config`
 
 ```json
 {
   "version": "1.1.0",
+  "commit": "3077a07c0ffee3077a07c0ffee3077a07c0ffee0",
   "manualRefresh": false,
   "tmds": true,
   "legal": { "imprint": true, "privacy": true },
