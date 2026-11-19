@@ -41,10 +41,16 @@ isitfixed.app {
 
 	# Access logging is off. To enable it, uncomment this block and set LEGAL_ACCESS_LOGS=true in the
 	# app, so the privacy policy describes it. It keeps only time, masked client address (/24, /48),
-	# method, path and query without workspace IDs, status, size and duration. Files roll daily and
-	# are deleted after 13 more days, so no entry is older than 14 days.
+	# method, path and query without workspace IDs, status, size and duration.
+	#
+	# Caddy rotates and prunes log files only when it writes a new entry, so on a quiet site old
+	# files would stay. Delete them on a schedule as well, independent of traffic, for example
+	# hourly from cron or a systemd timer:
+	#   find /var/log/caddy/isitfixed -type f -mmin +17280 -delete
+	# A file holds at most one day of entries before its last write (roll_interval), so deleting
+	# files not written for 12 days keeps every entry younger than 14 days.
 	# log {
-	# 	output file /var/log/caddy/isitfixed-access.log {
+	# 	output file /var/log/caddy/isitfixed/access.log {
 	# 		mode 0640
 	# 		roll_interval 24h
 	# 		roll_keep_for 312h

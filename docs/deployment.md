@@ -128,7 +128,8 @@ is a complete Caddy configuration:
 - `flush_interval -1` for `/api/cves/*/stream`, so progressive results reach the browser line by line;
 - a 256 KB request body limit;
 - no access log by default; a commented-out `log` block keeps one with client addresses truncated to /24 (IPv4) and
-  /48 (IPv6), workspace IDs removed and files deleted after 14 days (then also set `LEGAL_ACCESS_LOGS=true`);
+  /48 (IPv6) and workspace IDs removed (then also set `LEGAL_ACCESS_LOGS=true`). Caddy prunes old files only when it
+  writes, so pair it with the scheduled cleanup shown in the file to keep every entry younger than 14 days;
 - **no route to the admin port**.
 
 Any other proxy works the same way. Requirements: forward `X-Forwarded-For` and `X-Forwarded-Proto`, do not buffer
