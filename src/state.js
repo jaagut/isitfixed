@@ -1,5 +1,5 @@
 // Browser workspace state: defaults, validation of saved state and backups, migrations.
-import { CVSS_VERSIONS, migrateProducts, validId } from './data.js';
+import { CVSS_VERSIONS, PRODUCTS, migrateProducts, validId } from './data.js';
 import { validTheme } from './cases.js';
 
 // Bump to show the first-visit disclaimer again after its text changes.
@@ -8,10 +8,15 @@ export const DISCLAIMER_VERSION = '2026-11-18';
 export const MAX_OPEN_CASES = 200;
 export const MAX_CASES = 1000;
 
+// The newest release of every OS (PRODUCTS lists each OS oldest first); Windows client and
+// server are separate OSes.
+const osKey = (p) => (p.family === 'windows' && p.id.startsWith('server') ? 'windows-server' : p.family);
+export const DEFAULT_PRODUCTS = Object.freeze([...new Map(PRODUCTS.map((p) => [osKey(p), p.id])).values()]);
+
 export const defaultState = () => ({
   version: 1,
   cases: [],
-  products: ['rhel9', 'rhel10', 'debian12'],
+  products: [...DEFAULT_PRODUCTS],
   auto: true,
   activity: [],
   theme: 'system',
