@@ -127,6 +127,18 @@ export async function saveWorkspace(state, store = currentStore()) {
     return { saved: false, reason: error.name === 'QuotaExceededError' ? 'full' : 'unavailable' };
   }
 }
+// Asks the browser to exempt this origin from automatic eviction under storage pressure.
+// Browsers decide silently (Chromium, Safari) or prompt (Firefox); any failure means "not
+// persisted" and never affects saving. Resolves to whether storage is persisted.
+export async function requestPersistence(storage = globalThis.navigator?.storage) {
+  try {
+    if (!storage?.persist) return false;
+    if (storage.persisted && (await storage.persisted())) return true;
+    return Boolean(await storage.persist());
+  } catch {
+    return false;
+  }
+}
 export async function loadTheme(store = currentStore()) {
   try {
     return validTheme(await store.get('theme'));

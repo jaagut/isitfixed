@@ -72,7 +72,10 @@ source, not as an outage; the affected products stay **No data**.
 ## Browser storage
 
 Cases, product selections, source snapshots, settings and the workspace ID are stored in the browser's IndexedDB for
-this site. Storage is per browser and origin, unencrypted, and can be cleared by the browser or the user. Export a backup
+this site. Storage is per browser and origin, unencrypted, and can be cleared by the browser or the user. Once the
+workspace holds a case, the app asks the browser to keep this site's storage persistent, which exempts it from automatic
+eviction when the device is low on space; browsers may grant this silently, ask (Firefox), or decline. Persistent storage
+does not stop the user from clearing site data and has no expiry. Export a backup
 from Settings to keep a copy; restoring replaces the workspace after confirmation. Legacy notes and imported evidence in
 old backups are preserved, but their editing controls have been removed.
 
