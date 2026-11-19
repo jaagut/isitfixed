@@ -115,9 +115,10 @@ disabled, the footer hides their links and a warning is logged at startup. Fragm
 
 ### Other
 
-| Variable           | Default | Meaning                                                                                                      |
-| ------------------ | ------- | ------------------------------------------------------------------------------------------------------------ |
-| `WATCHDOG_TIMEOUT` | `120`   | Seconds the event loop may be unresponsive before the process exits so the container restarts. `0` disables. |
+| Variable           | Default | Meaning                                                                                                                                                                                                 |
+| ------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WATCHDOG_TIMEOUT` | `120`   | Seconds the event loop may be unresponsive before the process exits so the container restarts. `0` disables.                                                                                            |
+| `GIT_COMMIT`       | build   | Commit SHA reported by `/api/health` and shown in the footer. Set at image build time (`--build-arg GIT_COMMIT=…`; published images carry it); without it, a source checkout uses `git rev-parse HEAD`. |
 
 ## Public hosting
 

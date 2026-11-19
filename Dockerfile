@@ -44,6 +44,9 @@ RUN python -m compileall -q backend \
 ENV PATH=/opt/venv/bin:$PATH HOME=/tmp \
     HOST=0.0.0.0 PORT=8080 \
     CACHE_DB=/data/cache.sqlite3 LOG_DIR=/data/logs FRONTEND_DIR=/app/dist
+# The commit the image was built from, reported by /api/health and shown in the footer (CI passes the SHA).
+ARG GIT_COMMIT=""
+ENV GIT_COMMIT=$GIT_COMMIT
 USER 10001:10001
 VOLUME /data
 # The admin dashboard is off by default; set ADMIN_PORT (for example 8081) and keep that port private.

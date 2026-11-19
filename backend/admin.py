@@ -109,6 +109,7 @@ def collect(state, sampler):
     }
     return {
         "version": settings.version,
+        "commit": settings.commit or None,
         "hourly": stats.hourly(),
         "daily": stats.daily(),
         "startedAt": int(state.started * 1000),
@@ -816,7 +817,8 @@ def render(data):
         f"<div class='health {tone}' role='status'><span class='beacon' aria-hidden='true'></span>"
         f"<div><h2 class='sr-only'>System status</h2><strong>{_e(state)}</strong><span>{_e(reason)}</span></div></div>"
         f"<p class='meta'><span>Version <b>{_e(data['version'])}</b></span>"
-        f"<span>Up <b>{_e(_span(data['uptimeSeconds']))}</b></span>"
+        + (f"<span>Commit <b>{_e(data['commit'][:7])}</b></span>" if data["commit"] else "")
+        + f"<span>Up <b>{_e(_span(data['uptimeSeconds']))}</b></span>"
         f"<span>Generated <b>{generated}</b> · refreshes every 30 s</span>"
         "<a href='/api/stats'>JSON</a></p></header>"
     )

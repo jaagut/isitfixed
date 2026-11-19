@@ -521,6 +521,7 @@ def create_app(db_path=None, *, providers=None, clock=time.time, background=True
         response.headers["Cache-Control"] = "no-store"
         return {
             "version": settings.version,
+            "commit": settings.commit or None,
             "manualRefresh": settings.manual_refresh,
             "tmds": settings.tmds_enabled,
             "legal": legal.enabled(),
@@ -555,6 +556,7 @@ def create_app(db_path=None, *, providers=None, clock=time.time, background=True
         return {
             "status": status,
             "version": settings.version,
+            "commit": settings.commit or None,
             "workers": workers,
             "stalled": stalled,
             "failingSources": failing,

@@ -1,7 +1,11 @@
 # Local-first defaults: both ports bind to localhost only. See docs/deployment.md for public hosting.
 services:
   app:
-    build: .
+    build:
+      context: .
+      args:
+        # Shown in /api/health and the footer: GIT_COMMIT=$(git rev-parse HEAD) docker compose up --build -d
+        GIT_COMMIT: ${GIT_COMMIT:-}
     image: isitfixed:local
     restart: unless-stopped
     ports:

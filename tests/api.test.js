@@ -83,6 +83,7 @@ test('server config: defaults when unavailable, strict types, https-only source 
       assert.equal(url, '/api/config');
       return Response.json({
         version: '1.1.0',
+        commit: '3077a07c0ffee3077a07c0ffee3077a07c0ffee0',
         manualRefresh: true,
         tmds: false,
         legal: { imprint: true, privacy: 'yes' },
@@ -92,6 +93,7 @@ test('server config: defaults when unavailable, strict types, https-only source 
     };
     assert.deepEqual(await fetchConfig(), {
       version: '1.1.0',
+      commit: '3077a07c0ffee3077a07c0ffee3077a07c0ffee0',
       manualRefresh: true,
       tmds: false,
       legal: { imprint: true, privacy: false },
@@ -103,6 +105,7 @@ test('server config: defaults when unavailable, strict types, https-only source 
   }
   assert.equal(normalizeConfig({ sourceUrl: 'javascript:alert(1)' }).sourceUrl, null);
   assert.equal(normalizeConfig({ manualRefresh: 'true' }).manualRefresh, false);
+  assert.equal(normalizeConfig({ commit: '<b>' }).commit, null);
   assert.equal(normalizeConfig({}).tmds, true);
 });
 

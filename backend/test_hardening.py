@@ -90,6 +90,7 @@ def test_config_endpoint_and_manual_refresh_switch(setup):
         assert response.headers["cache-control"] == "no-store"
         assert response.json() == {
             "version": client.app.state.settings.version,
+            "commit": client.app.state.settings.commit or None,
             "manualRefresh": False,
             "tmds": True,
             "legal": {"imprint": False, "privacy": False},
@@ -102,6 +103,25 @@ def test_config_endpoint_and_manual_refresh_switch(setup):
             assert response.json() == {"detail": "Manual refresh is disabled on this server."}
         assert not providers.calls
         assert client.get(f"/api/cves/{CVE}?families=sles&refresh=false").status_code == 200
+
+
+def test_commit_env_must_be_a_full_sha(monkeypatch):
+    from backend import settings as module
+
+    monkeypatch.setenv("GIT_COMMIT", "ABCDEF" * 6 + "1234")
+    assert module._commit() == "abcdef" * 6 + "1234"
+    for value in ("not a sha", "abcdef1"):
+        monkeypatch.setenv("GIT_COMMIT", value)
+        assert module._commit() == ""
+
+
+def test_health_reports_version_and_commit(setup):
+    clock, providers, path = setup
+    with TestClient(make_app(path, providers, clock, commit="3077a07655a70cc33ccc390a79c33c0f364257d5")) as client:
+        body = client.get("/api/health").json()
+        assert body["version"] == client.app.state.settings.version
+        assert body["commit"] == "3077a07655a70cc33ccc390a79c33c0f364257d5"
+        assert client.get("/api/config").json()["commit"] == "3077a07655a70cc33ccc390a79c33c0f364257d5"
 
 
 def test_version_comes_from_pyproject():

@@ -58,6 +58,7 @@ export const ping = () => request('/health', {}, 10000).catch(() => null);
 // Server settings (GET /api/config). Unknown or missing values fall back to these.
 export const DEFAULT_CONFIG = Object.freeze({
   version: null,
+  commit: null,
   manualRefresh: false,
   tmds: true,
   legal: Object.freeze({ imprint: false, privacy: false }),
@@ -74,6 +75,7 @@ export function normalizeConfig(raw) {
   }
   return {
     version: typeof c.version === 'string' ? c.version : null,
+    commit: typeof c.commit === 'string' && /^[0-9a-f]{7,64}$/.test(c.commit) ? c.commit : null,
     manualRefresh: c.manualRefresh === true,
     tmds: c.tmds !== false,
     legal: { imprint: c.legal?.imprint === true, privacy: c.legal?.privacy === true },

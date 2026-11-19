@@ -1,6 +1,8 @@
 """Runtime settings, read once from environment variables (see docs/deployment.md)."""
 
 import os
+import re
+import subprocess
 import tomllib
 from dataclasses import dataclass, field, fields
 from pathlib import Path
@@ -16,7 +18,21 @@ def _version():
         return "0.0.0"
 
 
+def _commit():
+    """Git commit the code was built from: GIT_COMMIT (set by the image build), else the checkout's HEAD, else ""."""
+    commit = os.environ.get("GIT_COMMIT", "").strip()
+    if not commit:
+        try:
+            commit = subprocess.run(
+                ["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=5, check=True
+            ).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            return ""
+    return commit.lower() if re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", commit) else ""
+
+
 VERSION = _version()
+COMMIT = _commit()
 DEFAULT_SOURCE_URL = "https://github.com/jaagut/isitfixed"
 # Fallback "last updated" date of the bundled legal templates.
 LEGAL_TEMPLATES_UPDATED = "2026-11-18"
@@ -35,6 +51,7 @@ class SettingsError(ValueError):
 @dataclass(frozen=True)
 class Settings:
     version: str = VERSION
+    commit: str = COMMIT
     # Storage and serving
     cache_db: str = str(ROOT / "data" / "cache.sqlite3")
     serve_frontend: bool = True
