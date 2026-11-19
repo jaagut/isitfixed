@@ -14,7 +14,7 @@ COPY assets assets
 RUN pnpm run build
 
 # Runtime: FastAPI backend serving the built frontend.
-FROM python:3.13.18-slim@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90
+FROM python:3.15.2-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928
 LABEL org.opencontainers.image.title="Is It Fixed" \
       org.opencontainers.image.description="A compact CVE case workspace with a FastAPI vendor-data cache" \
       org.opencontainers.image.source="https://github.com/jaagut/isitfixed" \
