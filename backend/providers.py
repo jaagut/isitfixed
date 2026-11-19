@@ -43,6 +43,13 @@ DEBIAN_ADVISORY_URLS = tuple(
 DEBIAN_ADVISORY_LIMIT = 16 * MIB
 DEBIAN_ADVISORY_PAGE = "https://security-tracker.debian.org/tracker/{}"
 ALPINE_URL = "https://secdb.alpinelinux.org/"
+# SUSE files each CVE document under the year it was first generated (2023 for the initial export), not the CVE's year:
+# CVE-2023-0011 is in 2024/. The index lists every document (~2 MB); only CVEs outside the guessed folder are kept.
+SUSE_URL = "https://ftp.suse.com/pub/projects/security/csaf-vex/"
+SUSE_INDEX_URL = SUSE_URL + "index.txt"
+SUSE_INDEX_LIMIT = 16 * MIB
+SUSE_INDEX_DEADLINE = 10  # leaves most of the SLES deadline for the document itself
+SUSE_INDEX_RETRY = 300  # after a failed index download, guess folders for this long before trying again
 # SUSE lists public-cloud container-host images alongside the OS. They are
 # separate products, so they are excluded from the SLES rows and counted instead.
 SUSE_IMAGE = re.compile(r"\bimages? for\b|\bCHOST\b", re.I)
@@ -81,9 +88,13 @@ def evidence(name, status, source, **kwargs):
 def csaf(doc, cve, family):
     if doc.get("document", {}).get("csaf_version") != "2.0":
         raise ValueError("Expected CSAF 2.0")
-    vulnerability = next((v for v in doc.get("vulnerabilities", []) if v.get("cve", "").upper() == cve), None)
+    vulnerabilities = doc.get("vulnerabilities") or []
+    vulnerability = next((v for v in vulnerabilities if v.get("cve", "").upper() == cve), None)
     if vulnerability is None:
-        raise ValueError("CSAF document does not contain the requested CVE")
+        # SUSE publishes a document without vulnerabilities for CVEs it tracks but has not assessed for any product.
+        if vulnerabilities or doc["document"].get("tracking", {}).get("id", "").upper() != cve:
+            raise ValueError("CSAF document does not contain the requested CVE")
+        vulnerability = {}
     tree = doc.get("product_tree", {})
     names, short = {}, {}
 
@@ -352,6 +363,22 @@ def debian(doc, cve, advisories=()):
     return debian_evidence(debian_index(doc, debian_codes()).get(cve, []), advisories)
 
 
+def suse_folder(cve):
+    """The folder a SUSE CSAF document is in unless the index says otherwise."""
+    return max(2023, int(cve.split("-")[1]))
+
+
+def suse_index(text):
+    """CVE -> folder for the documents that are not in ``suse_folder(cve)``."""
+    index = {}
+    for line in text.splitlines():
+        folder, _, name = line.strip().partition("/")
+        cve = name.removesuffix(".json").upper()
+        if folder.isdigit() and re.fullmatch(r"CVE-\d{4}-\d+", cve) and int(folder) != suse_folder(cve):
+            index[cve] = int(folder)
+    return index
+
+
 def alpine_evidence(entries):
     items = []
     for name, version in entries:
@@ -438,6 +465,26 @@ class Providers:
                 lambda: debian_advisory_index(data.decode("utf-8", errors="replace"), debian_codes())
             )
 
+    async def suse_url(self, cve):
+        """The SUSE CSAF document URL; without the index, the folder is guessed from the CVE year."""
+        self.prune()
+        if SUSE_INDEX_URL not in self.feeds:
+
+            async def download():
+                try:
+                    async with asyncio.timeout(SUSE_INDEX_DEADLINE), self.documents:
+                        with self.memory.hold() as take:
+                            data = await read_limited(self.client, SUSE_INDEX_URL, limit=SUSE_INDEX_LIMIT, take=take)
+                            index = await asyncio.to_thread(suse_index, data.decode("utf-8", errors="replace"))
+                    self.feeds[SUSE_INDEX_URL] = (index, self.clock())
+                except Exception as error:  # noqa: BLE001 - most documents are in the guessed folder
+                    logger.warning("SUSE CSAF index unavailable: %s", describe(error))
+                    self.feeds[SUSE_INDEX_URL] = ({}, self.clock() - HOUR + SUSE_INDEX_RETRY)
+
+            await self.shared(SUSE_INDEX_URL, download)
+        folder = self.feeds.get(SUSE_INDEX_URL, ({},))[0].get(cve, suse_folder(cve))
+        return f"{SUSE_URL}{folder}/{cve.lower()}.json"
+
     async def debian_advisories(self, cve):
         """DSA/DLA entries for one CVE; the advisory lists are optional, so a failure only drops the links."""
         found = []
@@ -507,7 +554,7 @@ class Providers:
             url = (
                 f"https://security.access.redhat.com/data/csaf/v2/vex/{year}/{cve.lower()}.json"
                 if family == "rhel"
-                else f"https://ftp.suse.com/pub/projects/security/csaf-vex/{max(2023, int(year))}/{cve.lower()}.json"
+                else await self.suse_url(cve)
             )
             result, metadata = csaf(
                 await self.get_document(

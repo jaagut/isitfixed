@@ -61,3 +61,8 @@ test('wrong CVE or malformed source is rejected instead of becoming safe', () =>
   assert.throws(() => parseSuse(fixture, 'CVE-2026-1111'), /mismatched CVE/);
   assert.throws(() => parseSuse({}, id), /Invalid SUSE/);
 });
+test('a SUSE document without product assessment yields no rows', () => {
+  const doc = { document: { csaf_version: '2.0', tracking: { id } }, vulnerabilities: [] };
+  assert.deepEqual(parseSuse(doc, id), { sles15: [], sles16: [] });
+  assert.throws(() => parseSuse(doc, 'CVE-2026-1111'), /mismatched CVE/);
+});

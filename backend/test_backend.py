@@ -246,6 +246,60 @@ def test_csaf_recommended_scope_major_versions_and_missing_cve():
         csaf(FIXTURE, "CVE-2026-1111", "sles")
 
 
+def test_suse_document_without_product_assessment_has_no_rows():
+    # SUSE publishes these for CVEs it tracks but has not assessed for any product.
+    placeholder = {
+        "document": {"csaf_version": "2.0", "tracking": {"id": "CVE-2006-1174", "current_release_date": "2026-04-30"}},
+        "vulnerabilities": [],
+    }
+    data, metadata = csaf(placeholder, "CVE-2006-1174", "sles")
+    assert data == {"sles15": [], "sles16": []}
+    assert metadata == {"sourceUpdated": "2026-04-30", "advisories": []}
+    with pytest.raises(ValueError):
+        csaf(placeholder, "CVE-2006-1175", "sles")
+
+
+def test_suse_documents_are_found_through_the_folder_index():
+    clock, calls = Clock(), []
+    index = "2023/cve-2006-1174.json\n2024/cve-2023-0011.json\n2026/cve-2026-98432.json\n"
+    fail_index = False
+
+    async def handler(request):
+        url = str(request.url)
+        calls.append(url)
+        if url.endswith("/index.txt"):
+            return httpx.Response(503 if fail_index else 200, text=index)
+        cve = url.rsplit("/", 1)[1].removesuffix(".json").upper()
+        return httpx.Response(200, json={"document": {"csaf_version": "2.0", "tracking": {"id": cve}}})
+
+    base = "https://ftp.suse.com/pub/projects/security/csaf-vex/"
+
+    async def run():
+        nonlocal fail_index
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            provider = Providers(client, clock)
+            await asyncio.gather(*(provider.vendor("sles", "CVE-2023-0011") for _ in range(3)))
+            assert calls.count(base + "index.txt") == 1
+            assert base + "2024/cve-2023-0011.json" in calls
+            assert provider.feeds[base + "index.txt"][0] == {"CVE-2023-0011": 2024}  # only folders off the guess
+            assert (await provider.vendor("sles", "CVE-2006-1174"))[1]["url"] == base + "2023/cve-2006-1174.json"
+            assert (await provider.vendor("sles", "CVE-2026-5"))[1]["url"] == base + "2026/cve-2026-5.json"
+            assert calls.count(base + "index.txt") == 1
+            # Without the index, the folder is guessed, and the index is retried only after a pause.
+            clock.now += 3600
+            fail_index, calls[:] = True, []
+            assert (await provider.vendor("sles", "CVE-2023-0011"))[1]["url"] == base + "2023/cve-2023-0011.json"
+            await provider.vendor("sles", "CVE-2023-0011")
+            assert calls.count(base + "index.txt") == 1
+            clock.now += 300
+            fail_index = False
+            assert (await provider.vendor("sles", "CVE-2023-0011"))[1]["url"] == base + "2024/cve-2023-0011.json"
+            assert calls.count(base + "index.txt") == 2
+            assert provider.memory.used == 0
+
+    asyncio.run(run())
+
+
 def test_distribution_semantics_are_preserved():
     data = ubuntu(
         {

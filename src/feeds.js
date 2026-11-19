@@ -2,6 +2,7 @@ import { PRODUCTS, assessVex } from './data.js';
 export const redhatURL = (id) =>
   `https://security.access.redhat.com/data/csaf/v2/vex/${id.split('-')[1]}/${id.toLowerCase()}.json`;
 export const ubuntuURL = (id) => `https://ubuntu.com/security/cves/${id}.json`;
+// A guess: SUSE files documents by first-generation year, which the backend looks up in SUSE's index.txt.
 export const suseURL = (id) =>
   `https://ftp.suse.com/pub/projects/security/csaf-vex/${Math.max(2023, Number(id.split('-')[1]))}/${id.toLowerCase()}.json`;
 const entry = (name, status, source, fix = [], extra = {}) => ({
@@ -75,7 +76,12 @@ export function parseRedhat(doc, id) {
   );
 }
 export function parseSuse(doc, id) {
-  if (doc.document?.csaf_version !== '2.0' || !doc.vulnerabilities?.some((v) => v.cve?.toUpperCase() === id))
+  // SUSE publishes a document without vulnerabilities for CVEs it tracks but has not assessed for any product.
+  const placeholder = !doc.vulnerabilities?.length && doc.document?.tracking?.id?.toUpperCase() === id;
+  if (
+    doc.document?.csaf_version !== '2.0' ||
+    !(placeholder || doc.vulnerabilities?.some((v) => v.cve?.toUpperCase() === id))
+  )
     throw Error('Invalid SUSE CSAF document or mismatched CVE.');
   return Object.fromEntries(
     PRODUCTS.filter((p) => p.family === 'sles').map((p) => [p.id, assessVex(doc, id, p, 'SUSE CSAF')]),
