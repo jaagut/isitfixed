@@ -18,6 +18,3 @@ data/
 .DS_Store
 .idea/
 .vscode/
-
-# CI screenshots
-screenshots/

@@ -92,19 +92,6 @@ reference parser for the browser's assessment tests; the app does not use it.)
 
 By contributing, you agree that your contributions are licensed under the [MIT License](LICENSE).
 
-### Mocked PR screenshots
-
-Run `pnpm exec playwright install chromium` once, then `pnpm screenshots`. This
-produces 12 PNGs in `screenshots/`: desktop/mobile, light/dark, and home, a simple
-case with two sidebar entries, or a complex case with 18 entries and all OS rows.
-The browser uses synthetic IndexedDB cases, a fixed clock, and intercepted API
-requests; it never contacts vendor services.
-
-The PR screenshots workflow retains the PNGs only as an Actions artifact for 14
-days. Same-repository PRs receive an updated bot comment linking to the download;
-fork PRs can download it from the workflow run page. Screenshots are never
-committed or pushed to a branch. Artifact downloads require GitHub sign-in.
-
 Trivy vulnerability checks run independently of GitHub code scanning. SARIF
 reports are retained as workflow artifacts for 14 days. To also upload them to
 the Security tab, enable code scanning in repository settings and set the
