@@ -21,7 +21,8 @@ def _version():
 def _commit():
     """Git commit the code was built from: GIT_COMMIT (set by the image build), else the checkout's HEAD, else ""."""
     commit = os.environ.get("GIT_COMMIT", "").strip()
-    if not commit:
+    # Only ROOT's own checkout: git would otherwise report an enclosing repository's HEAD.
+    if not commit and (ROOT / ".git").exists():
         try:
             commit = subprocess.run(
                 ["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=5, check=True
