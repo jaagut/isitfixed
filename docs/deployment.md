@@ -1,15 +1,14 @@
 # Deployment
 
 Is It Fixed ships as one container image (`ghcr.io/jaagut/isitfixed`, or built locally with `docker compose build`). One
-process serves the public app on port 8080 and a private admin dashboard on port 8081; both share one event loop, the
-hourly scheduler and the SQLite cache, so run exactly one replica per data volume.
+process serves the public app on port 8080 and, optionally, a private admin dashboard (`ADMIN_PORT`); both share one
+event loop, the hourly scheduler and the SQLite cache, so run exactly one replica per data volume.
 
 - [Local use](#local-use)
 - [Configuration reference](#configuration-reference)
 - [Public hosting](#public-hosting)
 - [Hardening responsibilities](#hardening-responsibilities)
 - [Updates and rollback](#updates-and-rollback)
-- [Migrating from the ./data bind mount](#migrating-from-the-data-bind-mount)
 
 ## Local use
 
@@ -17,12 +16,12 @@ hourly scheduler and the SQLite cache, so run exactly one replica per data volum
 docker compose up --build -d
 ```
 
-The app is at http://localhost:8080 and the admin dashboard at http://localhost:8081; both ports bind to `127.0.0.1`
-only. Compose runs the container with a read-only root filesystem, all capabilities dropped, `no-new-privileges`, a
-1.5 GiB memory limit, a PID limit, rotated `json-file` logs (2 × 5 MB) and a health check. Data lives in the named
-volume `isitfixed-data` (`/data` in the container): the SQLite cache and, by default, the application log files.
-`/tmp` is a disk-backed anonymous volume used to spool Trend Micro agent archives (up to ~350 MB while one is being
-inspected).
+The app is at http://localhost:8080. The admin dashboard is off by default; to enable it, set `ADMIN_PORT=8081` in
+`.env` and uncomment the `8081` port in `compose.yaml` (it binds to `127.0.0.1` only, like the app). Compose runs the
+container with a read-only root filesystem, all capabilities dropped, `no-new-privileges`, a 1.5 GiB memory limit, a PID
+limit, rotated `json-file` logs (2 × 5 MB) and a health check. Data lives in the named volume `isitfixed-data` (`/data`
+in the container): the SQLite cache and, by default, the application log files. `/tmp` is a disk-backed anonymous volume
+used to spool Trend Micro agent archives (up to ~350 MB while one is being inspected).
 
 Settings go into an optional `.env` file next to `compose.yaml` (not committed; it is read through `env_file`
 with `required: false`). `compose.yaml` lists every variable as a commented example.
@@ -44,7 +43,7 @@ stop the process with a configuration error.
 | --------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `HOST`                | `127.0.0.1` (image: `0.0.0.0`)                      | Bind address of both servers.                                                                                                                                                              |
 | `PORT`                | `8080`                                              | Public app port.                                                                                                                                                                           |
-| `ADMIN_PORT`          | `8081`                                              | Admin dashboard port. Empty or `0` disables the dashboard.                                                                                                                                 |
+| `ADMIN_PORT`          | unset                                               | Admin dashboard port, for example `8081`. Unset, empty or `0`: no dashboard. Keep the port private.                                                                                        |
 | `ADMIN_TOKEN`         | unset                                               | When set, the dashboard requires `Authorization: Bearer <token>` or HTTP Basic auth with any user name and the token as password (compared in constant time). Still keep the port private. |
 | `CACHE_DB`            | `data/cache.sqlite3` (image: `/data/cache.sqlite3`) | SQLite database path.                                                                                                                                                                      |
 | `SERVE_FRONTEND`      | `true`                                              | Serve the frontend from the same origin. `false` serves only the API (and legal pages).                                                                                                    |
@@ -69,12 +68,14 @@ stop the process with a configuration error.
 
 | Variable                    | Default | Meaning                                                                                                                         |
 | --------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `MAX_CACHED_CVES`           | `1000`  | Cached CVEs. When full, the least recently refreshed unwatched CVE is evicted.                                                  |
+| `MAX_CACHED_CVES`           | `1500`  | Cached CVEs; must be greater than `MAX_WATCHED_CVES`. When full, the least recently refreshed unwatched CVE is evicted.         |
 | `MAX_WATCHED_CVES`          | `1000`  | Distinct watched CVEs across all workspaces; a watch sync beyond it gets HTTP 429.                                              |
 | `MAX_WATCHES_PER_WORKSPACE` | `200`   | Watched CVEs per workspace; a larger watch sync gets HTTP 422.                                                                  |
+| `MAX_WORKSPACES`            | `5000`  | Workspaces with at least one watch; a sync that would add one beyond it gets HTTP 429.                                          |
+| `MAX_WATCH_ROWS`            | `50000` | Watch registrations (workspace × CVE) in total; a sync beyond it gets HTTP 429.                                                 |
 | `WORKSPACE_TTL_DAYS`        | `30`    | Workspaces whose browser has not synced for this long are removed with their watches (the ten-day cache retention then starts). |
-| `RATE_LIMIT_REQUESTS`       | `240`   | All `/api` requests per client and minute (`/api/health` is exempt).                                                            |
-| `RATE_LIMIT_LOOKUPS`        | `20`    | Lookups that contact upstream sources (uncached, due or newly selected vendors) per client and minute.                          |
+| `RATE_LIMIT_REQUESTS`       | `300`   | All `/api` requests per client and minute (`/api/health` is exempt).                                                            |
+| `RATE_LIMIT_LOOKUPS`        | `30`    | Lookups that contact upstream sources (uncached, due or newly selected vendors) per client and minute.                          |
 | `RATE_LIMIT_LOOKUPS_GLOBAL` | `120`   | The same for all clients together, protecting the upstream vendors.                                                             |
 | `RATE_LIMIT_WATCHES`        | `12`    | Watch-list syncs per client and minute.                                                                                         |
 
@@ -100,8 +101,8 @@ categories such as `DNS lookup failed` or `HTTP 503 from ubuntu.com`.
 | `LEGAL_OPERATOR_ADDRESS`   | Postal address (required). Use real newlines or a literal `\n`.                                                                  |
 | `LEGAL_OPERATOR_EMAIL`     | Contact email (required).                                                                                                        |
 | `LEGAL_OPERATOR_PHONE`     | Optional phone number.                                                                                                           |
-| `LEGAL_RESPONSIBLE_PERSON` | Optional person responsible for content (§ 18 Abs. 2 MStV).                                                                      |
-| `LEGAL_HOSTING_PROVIDER`   | Name and address of the hosting provider (privacy policy).                                                                       |
+| `LEGAL_RESPONSIBLE_PERSON` | Optional person responsible for content (§ 18 Abs. 2 MStV). Use real newlines or a literal `\n`.                                 |
+| `LEGAL_HOSTING_PROVIDER`   | Name and address of the hosting provider (privacy policy). Use real newlines or a literal `\n`.                                  |
 | `LEGAL_LAST_UPDATED`       | Date shown as "last updated" (defaults to the template date).                                                                    |
 | `LEGAL_ACCESS_LOGS`        | `true` if your reverse proxy keeps access logs (with shortened IPs); adds that paragraph to the privacy policy. Default `false`. |
 | `LEGAL_DIR`                | Directory with your own `imprint.html` / `privacy.html` body fragments, replacing the bundled ones.                              |
@@ -126,8 +127,9 @@ is a complete Caddy configuration:
 - automatic HTTPS and HSTS;
 - `flush_interval -1` for `/api/cves/*/stream`, so progressive results reach the browser line by line;
 - a 256 KB request body limit;
-- an access log with client addresses truncated to /24 (IPv4) and /48 (IPv6), kept for 14 days at most (or remove the
-  `log` block to disable access logging);
+- no access log by default; a commented-out `log` block keeps one with client addresses truncated to /24 (IPv4) and
+  /48 (IPv6) and workspace IDs removed (then also set `LEGAL_ACCESS_LOGS=true`). Caddy prunes old files only when it
+  writes, so pair it with the scheduled cleanup shown in the file to keep every entry younger than 14 days;
 - **no route to the admin port**.
 
 Any other proxy works the same way. Requirements: forward `X-Forwarded-For` and `X-Forwarded-Proto`, do not buffer
@@ -157,11 +159,11 @@ revalidated (`no-cache`); API responses use `no-store`.
 
 - Runs as uid:gid `10001:10001`; works with a read-only root filesystem. Writable paths: `/data` (volume) and `/tmp`
   (~400 MB free recommended).
-- Ports 8080 (public) and 8081 (admin), bound to `0.0.0.0` inside the container.
-- Health check: `GET /api/health` returns HTTP 200 with `{"status": "ok" | "degraded", "workers": {…}}` while the
-  process serves requests. `degraded` means a background worker has not reported progress for a while; upstream
-  outages alone never fail the health check.
-- `SIGTERM` stops both servers gracefully (within ~20 s).
+- Port 8080 (public) and, only when `ADMIN_PORT` is set, the admin port; both bound to `0.0.0.0` inside the container.
+- Health check: `GET /api/health` returns HTTP 200 with `{"status": "ok" | "degraded", …}`; `degraded` means an
+  upstream source is currently failing, which never fails the health check. It returns HTTP 503 with
+  `"status": "stalled"` only when a background worker is stuck or has died, so the container should be restarted.
+- `SIGTERM` stops all servers gracefully (within ~20 s).
 
 ## Hardening responsibilities
 
@@ -187,37 +189,3 @@ To roll back, start the previous tag again. Database schema upgrades are applied
 forward-only (`PRAGMA user_version`); an older release keeps working on a newer schema only when the release notes say
 so. Back up the volume before upgrading across a schema change if the watch registrations matter to you (the cache
 itself refills from the vendors). For a local checkout, `git pull && docker compose up --build -d` rebuilds the image.
-
-## Upgrading an existing CVE Desk deployment
-
-The rebrand changes the Compose volume name from `cve-desk-data` to `isitfixed-data`. Before upgrading, stop the old
-container and copy its volume into the new one (never copy a live SQLite database):
-
-```sh
-docker compose down
-docker volume create isitfixed-data
-docker run --rm -v cve-desk-data:/from:ro -v isitfixed-data:/to alpine \
-  sh -c 'cp -a /from/. /to/ && chown -R 10001:10001 /to'
-docker compose up --build -d
-```
-
-Keep the old volume until you have verified the upgrade. Browser workspaces now use IndexedDB and start fresh;
-legacy localStorage is not migrated. Browser storage remains origin-specific.
-New application logs use `isitfixed.log`; the retention task also removes expired pre-rebrand logs.
-
-## Migrating from the ./data bind mount
-
-Earlier versions mounted `./data` into the container as root. The image now runs as uid 10001 and Compose uses the
-named volume `isitfixed-data`. Copy the old data once, fixing ownership:
-
-```sh
-docker compose down
-docker volume create isitfixed-data
-docker run --rm -v "$PWD/data:/from:ro" -v isitfixed-data:/to alpine \
-  sh -c 'cp -a /from/. /to/ && chown -R 10001:10001 /to'
-docker compose up --build -d
-```
-
-After verifying the app (your watched cases are listed on the admin dashboard as watched CVEs), the old `./data`
-directory can be deleted. Existing databases are upgraded in place on first start; existing watches start their
-30-day workspace inactivity clock at the upgrade.

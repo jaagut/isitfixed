@@ -11,7 +11,7 @@
 
 # Example Caddy (v2.10+) reverse proxy for a public Is It Fixed instance.
 # Caddy obtains and renews the TLS certificate automatically. Replace isitfixed.app with your domain.
-# The admin dashboard (port 8081) is deliberately NOT proxied: reach it over a VPN or SSH tunnel only.
+# The admin dashboard (off by default; ADMIN_PORT) is deliberately NOT proxied: reach it over a VPN or SSH tunnel only.
 # Compression is left to the app, which gzips JSON and static files but never the NDJSON progress stream.
 isitfixed.app {
 	header {
@@ -39,6 +39,36 @@ isitfixed.app {
 		}
 	}
 
-	# Access logging is off. To enable it, use the filtered, age-limited configuration
-	# in isitfixed-deploy/modules/caddy.nix and set LEGAL_ACCESS_LOGS=true in the app.
+	# Access logging is off. To enable it, uncomment this block and set LEGAL_ACCESS_LOGS=true in the
+	# app, so the privacy policy describes it. It keeps only time, masked client address (/24, /48),
+	# method, path and query without workspace IDs, status, size and duration.
+	#
+	# Caddy rotates and prunes log files only when it writes a new entry, so on a quiet site old
+	# files would stay. Delete them on a schedule as well, independent of traffic, for example
+	# hourly from cron or a systemd timer:
+	#   find /var/log/caddy/isitfixed -type f -mmin +17280 -delete
+	# A file holds at most one day of entries before its last write (roll_interval), so deleting
+	# files not written for 12 days keeps every entry younger than 14 days.
+	# log {
+	# 	output file /var/log/caddy/isitfixed/access.log {
+	# 		mode 0640
+	# 		roll_interval 24h
+	# 		roll_keep_for 312h
+	# 		roll_uncompressed
+	# 	}
+	# 	format filter {
+	# 		wrap json
+	# 		request>remote_ip ip_mask 24 48
+	# 		request>client_ip ip_mask 24 48
+	# 		request>uri regexp ^/api/workspaces/[^/?]+ /api/workspaces/-
+	# 		request>remote_port delete
+	# 		request>proto delete
+	# 		request>host delete
+	# 		request>headers delete
+	# 		request>tls delete
+	# 		resp_headers delete
+	# 		user_id delete
+	# 		bytes_read delete
+	# 	}
+	# }
 }

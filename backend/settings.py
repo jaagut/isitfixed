@@ -69,7 +69,8 @@ class Settings:
     log_level: str = "INFO"
     log_retention_days: int = MAX_LOG_RETENTION_DAYS
     # Admin dashboard
-    admin_port: int | None = 8081
+    # Off unless ADMIN_PORT is set, so the dashboard is never reachable by accident.
+    admin_port: int | None = None
     admin_token: str | None = field(default=None, repr=False)
     # Security headers
     hsts: bool = False
@@ -184,9 +185,16 @@ class Settings:
             "LAST_UPDATED",
         ):
             text(f"LEGAL_{name}")
-        if "legal_operator_address" in values:
-            # Compose files and .env cannot hold real newlines easily; accept a literal "\n".
-            values["legal_operator_address"] = values["legal_operator_address"].replace("\\n", "\n")
+        # Compose files, .env and podman env files cannot hold real newlines easily; accept a literal "\n" in every
+        # legal text value (addresses of the operator, the responsible person and the hosting provider).
+        for key in (
+            "legal_operator_name",
+            "legal_operator_address",
+            "legal_responsible_person",
+            "legal_hosting_provider",
+        ):
+            if key in values:
+                values[key] = values[key].replace("\\n", "\n")
         values.update(overrides)
         known = {f.name for f in fields(cls)}
         return cls(**{k: v for k, v in values.items() if k in known})

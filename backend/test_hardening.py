@@ -45,6 +45,8 @@ def test_settings_parse_environment():
             "ADMIN_PORT": "",
             "LOG_RETENTION_DAYS": "30",
             "LEGAL_OPERATOR_ADDRESS": "Street 1\\n12345 Town",
+            "LEGAL_HOSTING_PROVIDER": "Host GmbH\\nStreet 2\\n54321 City",
+            "LEGAL_RESPONSIBLE_PERSON": "Jane Doe\\nStreet 3",
             "CSP_CONNECT_SRC": "https://api.example.com, https://b.example.com",
             "SOURCE_URL": "https://example.com/src",
         }
@@ -52,10 +54,13 @@ def test_settings_parse_environment():
     assert settings.manual_refresh and not settings.tmds_enabled and settings.admin_port is None
     assert settings.log_retention_days == 14  # Capped.
     assert settings.legal_operator_address == "Street 1\n12345 Town"
+    assert settings.legal_hosting_provider == "Host GmbH\nStreet 2\n54321 City"
+    assert settings.legal_responsible_person == "Jane Doe\nStreet 3"
     assert settings.csp_connect_src == ("https://api.example.com", "https://b.example.com")
     assert settings.user_agent == f"isitfixed/{settings.version} (+https://example.com/src)"
     assert Settings.from_env({"ADMIN_PORT": "0"}).admin_port is None
-    assert Settings.from_env({}).admin_port == 8081
+    assert Settings.from_env({}).admin_port is None  # Off by default.
+    assert Settings.from_env({"ADMIN_PORT": "8081"}).admin_port == 8081
     with pytest.raises(SettingsError, match="MANUAL_REFRESH"):
         Settings.from_env({"MANUAL_REFRESH": "maybe"})
     with pytest.raises(SettingsError, match="MAX_WATCHED_CVES"):
