@@ -9,7 +9,7 @@ import {
   caseSearchText,
   followDefaults,
 } from '../src/state.js';
-import { loadWorkspace, saveWorkspace, loadTheme, saveTheme, createStore } from '../src/storage.js';
+import { loadWorkspace, saveWorkspace, loadTheme, saveTheme, createStore, requestPersistence } from '../src/storage.js';
 const kase = (n, extra = {}) => ({ id: `CVE-2026-${String(n).padStart(4, '0')}`, products: [], notes: '', ...extra });
 test('old saves migrate: TMDS on, no baseline, no disclaimer acknowledgement', () => {
   const old = {
@@ -280,4 +280,29 @@ test('cases with an untouched OS selection follow the defaults; customized ones 
   assert.deepEqual(s.cases[0].products, ['rhel10', 'ubuntu2404']);
   assert.deepEqual(s.cases[1].products, ['rhel9']);
   assert.deepEqual(followDefaults(s), []);
+});
+test('persistent storage is requested only when not yet granted and failures are tolerated', async () => {
+  let asked = 0;
+  const storage = (persisted, grant) => ({
+    persisted: async () => persisted,
+    persist: async () => {
+      asked++;
+      return grant;
+    },
+  });
+  assert.equal(await requestPersistence(storage(true, false)), true);
+  assert.equal(asked, 0, 'already persisted: no request');
+  assert.equal(await requestPersistence(storage(false, true)), true);
+  assert.equal(await requestPersistence(storage(false, false)), false);
+  assert.equal(asked, 2);
+  assert.equal(await requestPersistence(undefined), false);
+  assert.equal(await requestPersistence({}), false);
+  assert.equal(
+    await requestPersistence({
+      persist: async () => {
+        throw Error('denied');
+      },
+    }),
+    false,
+  );
 });

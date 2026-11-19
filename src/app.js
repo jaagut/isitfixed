@@ -16,7 +16,7 @@ import {
 import { validId, extractCveIds, PRODUCTS, VENDORS } from './data.js';
 import { caseActionState, diffActions, withoutTmds, describeChanges } from './changes.js';
 import { DISCLAIMER_VERSION, MAX_OPEN_CASES, MAX_CASES, saveable, followDefaults } from './state.js';
-import { loadWorkspace, saveWorkspace, saveTheme } from './storage.js';
+import { loadWorkspace, saveWorkspace, saveTheme, requestPersistence } from './storage.js';
 import {
   matchesCase,
   replaceSearchFilter,
@@ -57,7 +57,8 @@ let state = loaded.state,
   chooserOpen = false,
   archivedOpen = false,
   homeFilter = null,
-  storageFailed = false;
+  storageFailed = false,
+  persistenceRequested = false;
 const busy = new Set(),
   groupOverride = new Map(),
   inventory = { data: null, error: null };
@@ -78,6 +79,11 @@ async function save() {
     });
   }
   storageFailed = !result.saved;
+  // Once there is work to lose, ask the browser not to evict it (once per page load).
+  if (result.saved && state.cases.length && !persistenceRequested) {
+    persistenceRequested = true;
+    void requestPersistence();
+  }
 }
 // `action` adds one button ({label, run}); such a toast stays longer and can be clicked.
 function toast(message, action = null) {
