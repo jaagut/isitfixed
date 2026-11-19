@@ -42,12 +42,13 @@ RUN python -m compileall -q backend \
     && useradd --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin isitfixed \
     && mkdir -p /data && chown 10001:10001 /data
 ENV PATH=/opt/venv/bin:$PATH HOME=/tmp \
-    HOST=0.0.0.0 PORT=8080 ADMIN_PORT=8081 \
+    HOST=0.0.0.0 PORT=8080 \
     CACHE_DB=/data/cache.sqlite3 LOG_DIR=/data/logs FRONTEND_DIR=/app/dist
 USER 10001:10001
 VOLUME /data
-EXPOSE 8080 8081
+# The admin dashboard is off by default; set ADMIN_PORT (for example 8081) and keep that port private.
+EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
     CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=5)"]
-# One process: the public app (8080) and the admin dashboard (8081) share the event loop, scheduler and SQLite cache.
+# One process: the public app (8080) and the optional admin dashboard (ADMIN_PORT) share the event loop, scheduler and SQLite cache.
 CMD ["python", "-m", "backend"]

@@ -48,11 +48,6 @@ docker compose up --build -d # update after git pull
 docker compose down          # stop (keeps the isitfixed-data volume)
 ```
 
-> **Upgrading from an older checkout?** Compose used to bind-mount `./data`; it now uses the named volume
-> `isitfixed-data`. Copy your existing data into the volume before starting the new version, as described in
-> [Migrating from the ./data bind mount](docs/deployment.md#migrating-from-the-data-bind-mount). Otherwise the app
-> starts with an empty cache and without the existing watch registrations.
-
 A prebuilt image is published as `ghcr.io/jaagut/isitfixed` (tags `latest`, `X.Y.Z`, `main`, `sha-<commit>`). For
 public hosting behind a reverse proxy (HTTPS, trusted proxy IPs, imprint and privacy pages, admin dashboard), read
 [docs/deployment.md](docs/deployment.md) and [docs/operations.md](docs/operations.md). HTTPS is required for desktop
@@ -79,7 +74,7 @@ is in [docs/deployment.md](docs/deployment.md).
 | `FORWARDED_ALLOW_IPS`                       | `127.0.0.1`           | Reverse proxy IPs trusted for `X-Forwarded-For`                           |
 | `LOG_DIR` / `LOG_LEVEL`                     | – / `INFO`            | Application log directory (the image uses `/data/logs`) and level         |
 | `LOG_RETENTION_DAYS`                        | `14`                  | Days the app keeps its log files (maximum 14), enforced daily             |
-| `ADMIN_PORT` / `ADMIN_TOKEN`                | `8081` / –            | Private admin dashboard port (empty or `0` disables) and optional token   |
+| `ADMIN_PORT` / `ADMIN_TOKEN`                | – / –                 | Private admin dashboard port (off when unset) and optional token          |
 | `CORS_ORIGINS` / `CSP_CONNECT_SRC`          | –                     | Only needed when the frontend and API are hosted on different origins     |
 | `LEGAL_OPERATOR_*`, `LEGAL_*`, `LEGAL_DIR`  | –                     | Imprint and privacy pages, see [legal/README.md](legal/README.md)         |
 
@@ -181,7 +176,7 @@ uv run pre-commit run --all-files    # ruff, prettier, eslint and file checks
 ```
 
 To run without Docker, start the server with `uv run python -m backend` (data goes to `data/`) and open
-<http://localhost:8080>; the admin dashboard listens on <http://localhost:8081>. See [CONTRIBUTING.md](CONTRIBUTING.md)
+<http://localhost:8080>; with `ADMIN_PORT=8081` the admin dashboard listens on <http://localhost:8081>. See [CONTRIBUTING.md](CONTRIBUTING.md)
 for conventions and how to add a vendor source.
 
 ### Project layout

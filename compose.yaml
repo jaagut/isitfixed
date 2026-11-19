@@ -6,7 +6,8 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8080:8080" # public app
-      - "127.0.0.1:8081:8081" # private admin dashboard (never expose publicly)
+      # Private admin dashboard: off by default. Set ADMIN_PORT=8081 (and ADMIN_TOKEN) and uncomment.
+      # - "127.0.0.1:8081:8081"
     # Optional settings and secrets (e.g. ADMIN_TOKEN) go into a .env file next to this one; it is not committed.
     env_file:
       - path: .env
@@ -16,7 +17,7 @@ services:
       # Every variable below is optional; uncomment to override the default, or set it in .env.
       # MANUAL_REFRESH: 'false'          # show "Refresh data" and accept refresh=true
       # TMDS_ENABLED: 'true'             # Trend Micro Deep Security inventories
-      # ADMIN_PORT: '8081'               # empty or 0 disables the admin dashboard
+      # ADMIN_PORT: '8081'               # enables the admin dashboard (off when unset, empty or 0)
       # ADMIN_TOKEN: ''                  # require Bearer/Basic auth on the admin dashboard (prefer .env)
       # SITE_URL: 'https://isitfixed.app'
       # SOURCE_URL: 'https://github.com/jaagut/isitfixed'

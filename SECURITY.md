@@ -32,7 +32,7 @@ vulnerabilities.
 
 ## Dependency updates
 
-Dependabot proposes version updates weekly with a two-day cooldown, matching the two-day minimum release age in
+Dependabot proposes version updates daily with a two-day cooldown, matching the two-day minimum release age in
 `pyproject.toml` and `pnpm-workspace.yaml`. The cooldown applies to version updates only. Dependabot security updates
 are exempt and may be merged as soon as they have been reviewed and CI passes; this is the one deliberate exception
 to the two-day rule (a pnpm or uv lock refresh for such a fix may need a temporary, documented override of the

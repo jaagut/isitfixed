@@ -25,8 +25,8 @@ and a warning is logged at startup.
 | `LEGAL_OPERATOR_ADDRESS`   | `{{operator_address}}`     | Required. Postal address; separate lines with real newlines or `\n`                                                           |
 | `LEGAL_OPERATOR_EMAIL`     | `{{operator_email}}`       | Required. Contact e-mail address                                                                                              |
 | `LEGAL_OPERATOR_PHONE`     | `{{operator_phone}}`       | Optional. The phone line is omitted when empty                                                                                |
-| `LEGAL_RESPONSIBLE_PERSON` | `{{responsible_person}}`   | Optional. Person responsible for content under § 18 Abs. 2 MStV and address                                                   |
-| `LEGAL_HOSTING_PROVIDER`   | `{{hosting_provider}}`     | Optional. Name and address of the hosting provider (processor, Art. 28 GDPR); the section is omitted when empty               |
+| `LEGAL_RESPONSIBLE_PERSON` | `{{responsible_person}}`   | Optional. Person responsible for content under § 18 Abs. 2 MStV and address; lines as above                                   |
+| `LEGAL_HOSTING_PROVIDER`   | `{{hosting_provider}}`     | Optional. Name and address of the hosting provider (processor, Art. 28 GDPR), lines as above; omitted when empty              |
 | `SITE_URL`                 | `{{site_url}}`             | Optional. Public URL of the instance                                                                                          |
 | `SOURCE_URL`               | `{{source_url}}`           | Source code link; defaults to this repository                                                                                 |
 | `LOG_RETENTION_DAYS`       | `{{log_retention_days}}`   | Default and maximum 14                                                                                                        |

@@ -4,8 +4,8 @@ Day-to-day running of an Is It Fixed instance. Configuration is described in [de
 
 ## Admin dashboard
 
-The dashboard is a second server in the same process on `ADMIN_PORT` (default 8081). It is meant for the operator
-only: never route it through the public reverse proxy; reach it through a VPN (for example Tailscale) or an SSH tunnel:
+The dashboard is a second server in the same process on `ADMIN_PORT`. It is off by default; set `ADMIN_PORT` (for
+example `8081`) to enable it. It is meant for the operator only: never route it through the public reverse proxy; reach it through a VPN (for example Tailscale) or an SSH tunnel:
 
 ```sh
 ssh -L 8081:127.0.0.1:8081 your-server   # then open http://localhost:8081

@@ -23,13 +23,13 @@ Both package managers only resolve releases that have been public for at least t
 `pyproject.toml`, `minimumReleaseAge` in `pnpm-workspace.yaml`). Keep it that way when adding dependencies, and commit
 the updated `uv.lock` or `pnpm-lock.yaml`.
 
-Dependabot opens version updates weekly with the same two-day cooldown. The cooldown applies to version updates only:
+Dependabot opens version updates daily with the same two-day cooldown. The cooldown applies to version updates only:
 Dependabot **security updates** are an explicit exception and may be merged sooner, once a maintainer has reviewed the
 change and CI passes. If the two-day minimum release age blocks such a fix from resolving locally, override it for
 that one dependency and say so in the pull request.
 
 Run the app with `docker compose up --build`, or without Docker with `uv run python -m backend` (public app on
-port 8080, admin dashboard on 8081, data in `data/`).
+port 8080, data in `data/`; set `ADMIN_PORT=8081` for the admin dashboard).
 
 ## Checks
 
