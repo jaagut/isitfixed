@@ -1,0 +1,44 @@
+# HTTP error entries contain requests (including workspace bearer IDs). Drop the request object.
+{
+ log default {
+  level ERROR
+  format filter {
+   wrap json
+   request delete
+  }
+ }
+}
+
+# Example Caddy (v2.10+) reverse proxy for a public Is It Fixed instance.
+# Caddy obtains and renews the TLS certificate automatically. Replace isitfixed.app with your domain.
+# The admin dashboard (port 8081) is deliberately NOT proxied: reach it over a VPN or SSH tunnel only.
+# Compression is left to the app, which gzips JSON and static files but never the NDJSON progress stream.
+isitfixed.app {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+		-Via
+	}
+
+	# Requests carry at most a watch list (a few KB); refuse anything large.
+	request_body {
+		max_size 256KB
+	}
+
+	# Progressive case loading streams newline-delimited JSON: flush every line immediately.
+	@stream path_regexp stream ^/api/cves/[^/]+/stream$
+	reverse_proxy @stream 127.0.0.1:8080 {
+		flush_interval -1
+	}
+
+	reverse_proxy 127.0.0.1:8080 {
+		# Caddy sets X-Forwarded-For/-Proto; the app trusts them only from FORWARDED_ALLOW_IPS.
+		transport http {
+			dial_timeout 5s
+			response_header_timeout 200s
+		}
+	}
+
+	# Access logging is off. To enable it, use the filtered, age-limited configuration
+	# in isitfixed-deploy/modules/caddy.nix and set LEGAL_ACCESS_LOGS=true in the app.
+}

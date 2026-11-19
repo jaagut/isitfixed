@@ -1,0 +1,17 @@
+[22 Oct 2026] DLA-4850-1 linux-6.12 - security update
+	{CVE-2025-38204 CVE-2026-98432}
+	[bookworm] - linux-6.12 6.12.113-1~deb12u1
+[17 Oct 2026] DLA-4841-1 linux - security update
+	{CVE-2023-52629 CVE-2026-98432}
+	[bookworm] - linux 6.1.190-1
+[16 Oct 2026] DSA-6568-1 linux - security update
+	{CVE-2025-38204 CVE-2026-98432}
+	[trixie] - linux 6.12.113-1
+[01 Jul 2024] DSA-5724-1 openssh - security update
+	{CVE-2024-6387}
+	[bookworm] - openssh 1:9.2p1-2+deb12u3
+[05 Jan 2016] DSA-3446-1 openssh - security update
+	{CVE-2016-0777 CVE-2016-0778}
+	[wheezy] - openssh 1:6.0p1-4+deb7u3
+	NOTE: end of security support for jessie
+	[jessie] - virtualbox <end-of-life>

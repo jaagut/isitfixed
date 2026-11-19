@@ -1,6 +1,23 @@
+# Python
 .venv/
 __pycache__/
 .pytest_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+.pnpm-store/
+dist/
+
+# Runtime data
 data/
 *.sqlite3
 *.sqlite3-*
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+
+# CI screenshots
+screenshots/

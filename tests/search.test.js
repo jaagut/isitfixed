@@ -1,0 +1,93 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  matchesCase,
+  replaceSearchFilter,
+  selectedSearchFilter,
+  searchRelevance,
+  searchFilterLabel,
+  toggleSearchFilter,
+} from '../src/search.js';
+import { statusBar } from '../src/render/common.js';
+
+const c = {
+  id: 'CVE-2026-0001',
+  archived: true,
+  products: ['rhel9', 'ubuntu2404', 'debian13'],
+  savedTitle: 'Kernel update',
+  notes: 'Watch the db cluster',
+  vendorData: { evidence: { ubuntu2404: [{ name: 'libsample', status: 'fixed', fix: ['sample-1'] }] } },
+};
+
+test('family, version and status qualifiers refer to the same selected row', () => {
+  assert.equal(matchesCase(c, 'os:rhel version:rhel9 status:fixed'), false);
+  assert.equal(matchesCase(c, 'os:rhel version:9 status:unknown'), true);
+  assert.equal(matchesCase(c, 'os:canonical version:noble status:fix-available'), true);
+  assert.equal(matchesCase(c, 'status:fixed -os:rhel'), false);
+  assert.equal(matchesCase(c, 'os:"Red Hat"'), true);
+  assert.equal(matchesCase(c, 'os:typo'), false);
+});
+
+test('plain search finds case details, package evidence, selected versions and archived notes', () => {
+  for (const query of ['rhel', 'Trixie kernel', '"db cluster" libsample', 'sample-1', 'CVE-2026', '-absent'])
+    assert.equal(matchesCase(c, query), true, query);
+  assert.equal(matchesCase(c, 'missing'), false);
+  assert.ok(searchRelevance(c, 'kernel') > searchRelevance(c, 'cluster'));
+});
+
+test('values of one filter group are alternatives and can be toggled on and off', () => {
+  assert.equal(matchesCase(c, 'version:rhel8 version:rhel9'), true);
+  assert.equal(matchesCase(c, 'version:rhel8 version:sles15'), false);
+  // OS family and version are one group: either may match.
+  assert.equal(matchesCase(c, 'os:sles version:ubuntu2404'), true);
+  // Groups still combine on the same row: Ubuntu 24.04 is the only fixed row.
+  assert.equal(matchesCase(c, 'version:rhel9 version:ubuntu2404 status:fixed'), true);
+  assert.equal(matchesCase(c, 'version:rhel9 status:fixed'), false);
+  let q = toggleSearchFilter('kernel', 'version:rhel9');
+  q = toggleSearchFilter(q, 'version:rhel10');
+  assert.equal(q, 'kernel version:rhel9 version:rhel10');
+  assert.equal(searchFilterLabel(q, 'os'), 'RHEL 9 +1');
+  assert.equal(toggleSearchFilter('kernel version:9 version:rhel10', 'version:rhel9'), 'kernel version:rhel10');
+});
+
+test('filter pills name the chosen OS family, version or status', () => {
+  assert.equal(searchFilterLabel('kernel os:rhel', 'os'), 'RHEL');
+  assert.equal(searchFilterLabel('version:ubuntu2404 status:fixed', 'os'), 'Ubuntu 24.04');
+  assert.equal(searchFilterLabel('version:ubuntu2404 status:fixed', 'status'), 'Fix available');
+  assert.equal(searchFilterLabel('-status:affected kernel', 'status'), '');
+  assert.equal(searchFilterLabel('os:typo', 'os'), '');
+});
+
+test('the OS picker replaces both OS qualifiers while keeping terms, exclusions and status', () => {
+  const query = '"db cluster" OS:"Red Hat" version:rhel9 -os:debian status:unknown';
+  const next = replaceSearchFilter(query, 'os', 'version:ubuntu2404');
+  assert.equal(next, '"db cluster" -os:debian status:unknown version:ubuntu2404');
+  assert.equal(replaceSearchFilter(next, 'os'), '"db cluster" -os:debian status:unknown');
+  assert.equal(
+    replaceSearchFilter(next, 'status', 'status:fixed'),
+    '"db cluster" -os:debian version:ubuntu2404 status:fixed',
+  );
+  assert.equal(selectedSearchFilter(query, 'os', 'rhel'), true);
+  assert.equal(selectedSearchFilter(query, 'os', 'debian'), false);
+});
+
+test('status bar segments name their status in the bar, with one logo per OS version above', () => {
+  const two = { ...c, products: ['rhel9', 'rhel10', 'ubuntu2404', 'debian13'], apiChecked: 1234 };
+  const bar = statusBar(two, { showChecked: true });
+  // "No data" (RHEL 9, RHEL 10, Debian 13) is left out while another status is known.
+  const segments = [...bar.matchAll(/class="status-seg ([a-z_]+)" data-flex="(\d+)"/g)].map((m) => [m[1], m[2]]);
+  assert.deepEqual(segments, [['fix_available', '1']]);
+  assert.match(bar, /aria-label="Fix available: Ubuntu 24.04"/);
+  assert.match(bar, /class="seg-full-label">Fix available<\/span>/);
+  assert.match(bar, /class="seg-short-label">Fix<\/span>/);
+  assert.match(bar, /<span class="stack-logo" data-tip="Ubuntu 24.04"><img[^>]*logo-ubuntu/);
+  assert.match(bar, /data-checked-at="1234"/);
+  assert.doesNotMatch(statusBar(c), /data-checked-at/);
+  assert.equal(statusBar({ ...c, products: [] }), '');
+  assert.doesNotMatch(bar, /tabindex=|<button|<details/);
+  // With nothing else known, "No data" is shown: one logo per version, each with its own tooltip.
+  const unknown = statusBar({ ...c, products: ['rhel9', 'rhel10'], vendorData: undefined });
+  assert.match(unknown, /class="status-seg unknown" data-flex="2"/);
+  assert.match(unknown, /class="seg-ticks"><span><\/span><span><\/span><\/span>/);
+  assert.match(unknown, /data-tip="RHEL 9"><img[^>]*><\/span><span class="stack-logo" data-tip="RHEL 10">/);
+});

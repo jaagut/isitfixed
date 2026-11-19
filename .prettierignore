@@ -1,0 +1,12 @@
+# Generated files
+dist/
+pnpm-lock.yaml
+uv.lock
+
+# Test data and runtime state
+tests/fixtures/
+data/
+
+# Vendor logos are kept byte-for-byte as published
+assets/logos/*.svg
+backend/fixtures/

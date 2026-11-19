@@ -1,23 +1,331 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#173c32"><title>CVE Desk — your vulnerability workspace</title><link rel="stylesheet" href="style.css"></head>
-<body>
-<aside class="sidebar">
-  <a class="brand" href="/"><span class="brand-icon">c/</span> CVE Desk</a>
-  <button id="new-case" class="primary full">＋ Open a case <kbd>N</kbd></button>
-  <label class="search"><span>⌕</span><input id="search" placeholder="Find a case…" aria-label="Find a case"></label>
-  <div class="sidebar-label">YOUR CASES <span id="case-count">0</span></div>
-  <nav id="case-list" aria-label="Saved cases"></nav>
-  <nav id="archived-list" aria-label="Archived cases" hidden></nav>
-  <div class="sidebar-bottom"><button id="settings-button">⚙ Settings</button><p><span class="dot safe"></span> Cases stored on this device</p></div>
-  <div id="sidebar-resize" role="separator" aria-label="Sidebar width" aria-orientation="vertical" aria-valuemin="220" aria-valuemax="480" aria-valuenow="265" tabindex="0" title="Drag to resize; arrow keys adjust width"></div>
-</aside>
-<div class="workspace">
-  <main id="main"></main>
-
-</div>
-<dialog id="add-dialog"><form id="add-form"><div class="dialog-heading"><h2>Open a case</h2><button type="button" data-close="add-dialog" aria-label="Close">×</button></div><p>One vulnerability. Just the products you care about. Shortcut: N or Ctrl+K.</p><label>CVE ID or link<input id="cve-input" placeholder="CVE-2024-3094 or a URL that contains it" required autocomplete="off" spellcheck="false"></label><p id="add-error" class="error" role="alert"></p><button class="primary full" type="submit">Open case →</button></form></dialog>
-<dialog id="settings-dialog"><div class="dialog-heading"><h2>Settings</h2><button data-close="settings-dialog" aria-label="Close">×</button></div><h3>Operating systems</h3><p class="settings-hint">Drag to set the order cases use. Selected versions are the defaults for new cases; each case can change its own selection.</p><div id="default-products" class="product-choices sortable"></div><hr><h3>Severity</h3><label class="select-row">Score shown for cases <select id="cvss-version"></select></label><p class="settings-hint">If a CVE has no score in this version, the next available version is shown and labelled.</p><hr><label class="toggle"><input type="checkbox" id="auto-refresh"> Check for case updates every hour while open</label><button id="notifications">Enable desktop notifications</button><p class="muted">Updated cases move to the top of the sidebar with a New indicator. Browser notifications require permission and HTTPS or localhost.</p><hr><div class="actions"><button id="export">Export workspace ↓</button><label class="button">Restore backup ↑<input id="restore" type="file" accept="application/json,.json" hidden></label></div><p class="muted">Backups include cases, source snapshots, product choices. Browser storage can be cleared; export a backup to keep a copy.</p></dialog>
-<div id="toast" role="status" aria-live="polite"></div>
-<script type="module" src="src/app.js"></script>
-</body></html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#173c32" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#111714" media="(prefers-color-scheme: dark)" />
+    <title>Is It Fixed — your vulnerability workspace</title>
+    <link rel="icon" href="/assets/icon.svg?v=cb550a8fc05e" type="image/svg+xml" />
+    <script type="module" src="/src/theme.js"></script>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <aside class="sidebar" id="case-sidebar">
+      <div class="sidebar-heading">
+        <a class="brand" href="/"><span class="brand-icon">?/</span> Is It Fixed</a>
+        <a
+          class="source-link icon-link"
+          data-source-link
+          href="/"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Source code on GitHub"
+          title="Source code on GitHub"
+          hidden
+          ><span class="github-icon" aria-hidden="true"></span
+        ></a>
+      </div>
+      <div id="sidebar-case-entry" hidden>
+        <div id="case-entry-form">
+          <form class="home-open" aria-label="Open a case">
+            <svg
+              class="case-entry-icon"
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              aria-hidden="true"
+            >
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            <input
+              id="cve-input"
+              placeholder="CVE ID or advisory link"
+              aria-label="CVE ID or advisory link"
+              aria-describedby="add-error"
+              autocomplete="off"
+              spellcheck="false"
+              required
+            />
+            <button class="primary" aria-label="Open case"><span>Open case</span> →</button>
+            <kbd aria-hidden="true">/</kbd>
+          </form>
+          <p id="add-error" class="field-error" role="alert"></p>
+        </div>
+      </div>
+      <!-- Small screens: the case list folds behind this button (the home page lists cases too). -->
+      <button type="button" id="cases-toggle" class="cases-toggle" aria-expanded="false" aria-controls="sidebar-cases">
+        Your cases <span id="cases-toggle-count" class="count">0</span>
+        <svg
+          class="filter-chevron"
+          viewBox="0 0 24 24"
+          width="14"
+          height="14"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+      <div id="sidebar-cases" class="sidebar-cases">
+        <div class="search-area">
+          <div class="search">
+            <svg
+              class="search-icon"
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              aria-hidden="true"
+            >
+              <circle cx="10.5" cy="10.5" r="6.5" />
+              <path d="m16 16 4.5 4.5" />
+            </svg>
+            <input
+              id="search"
+              type="search"
+              placeholder="Search your cases…"
+              aria-label="Search your cases"
+              autocomplete="off"
+              title="Search your cases (S)"
+            />
+            <button type="button" id="clear-search" aria-label="Clear search" hidden>×</button>
+            <kbd class="search-shortcut" aria-hidden="true">S</kbd>
+          </div>
+          <div class="search-filters" role="group" aria-label="Filter cases">
+            <button type="button" data-search-field="os" aria-expanded="false" aria-controls="search-filter-panel">
+              <span class="filter-label">OS</span>
+              <svg
+                class="filter-chevron"
+                viewBox="0 0 24 24"
+                width="12"
+                height="12"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+            </button>
+            <button type="button" data-search-field="status" aria-expanded="false" aria-controls="search-filter-panel">
+              <span class="filter-label">Status</span>
+              <svg
+                class="filter-chevron"
+                viewBox="0 0 24 24"
+                width="12"
+                height="12"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+            </button>
+          </div>
+          <div
+            id="search-filter-panel"
+            class="search-filter-panel collapsible animate"
+            role="group"
+            aria-labelledby="search-filter-title"
+            hidden
+          >
+            <div class="search-filter-heading">
+              <button type="button" id="back-search-filter" aria-label="Back to operating systems" hidden>←</button>
+              <strong id="search-filter-title">Filter cases</strong>
+              <button type="button" id="close-search-filter" aria-label="Remove this filter" title="Remove this filter">
+                ×
+              </button>
+            </div>
+            <div id="search-options" class="search-options"></div>
+          </div>
+        </div>
+        <div class="sidebar-label">YOUR CASES <span id="case-count">0</span></div>
+        <nav id="case-list" aria-label="Saved cases"></nav>
+        <nav id="archived-list" aria-label="Archived cases" hidden></nav>
+      </div>
+      <div class="sidebar-bottom">
+        <div class="sidebar-actions">
+          <button type="button" id="settings-button" aria-label="Settings">
+            <span aria-hidden="true">⚙</span><span class="settings-label">Settings</span>
+          </button>
+        </div>
+        <p id="connection-status" class="connection pending" role="status">
+          <span class="connection-dot" aria-hidden="true"></span><span class="connection-text">Connecting…</span>
+        </p>
+      </div>
+      <div
+        id="sidebar-resize"
+        role="separator"
+        aria-label="Sidebar width"
+        aria-orientation="vertical"
+        aria-controls="case-sidebar"
+        aria-valuemin="300"
+        aria-valuemax="480"
+        aria-valuenow="320"
+        tabindex="0"
+        title="Drag to resize sidebar"
+      ></div>
+    </aside>
+    <div class="workspace">
+      <main id="main"></main>
+      <footer class="site-footer">
+        <p class="site-disclaimer">
+          <span class="product-name">Is It Fixed</span> is an informational tool. Data comes from public vendor sources
+          and may be incomplete, delayed or wrong. No warranty — use at your own discretion and verify with the vendor
+          before acting. Not affiliated with or endorsed by Red Hat, SUSE, Canonical, Debian, Alpine, Microsoft or Trend
+          Micro.
+        </p>
+        <ul class="footer-links">
+          <li data-legal="imprint" hidden><a href="/imprint">Imprint</a></li>
+          <li data-legal="privacy" hidden><a href="/privacy">Privacy</a></li>
+          <li data-source hidden>
+            <a
+              class="source-link"
+              data-source-link
+              href="/"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Source code on GitHub"
+              ><span class="github-icon" aria-hidden="true"></span>Source code</a
+            >
+          </li>
+        </ul>
+      </footer>
+    </div>
+    <dialog id="settings-dialog" aria-labelledby="settings-title">
+      <div class="dialog-heading">
+        <h2 id="settings-title">Settings</h2>
+        <button type="button" data-close="settings-dialog" aria-label="Close">×</button>
+      </div>
+      <section class="settings-section" aria-labelledby="settings-os">
+        <h3 id="settings-os">Operating systems</h3>
+        <p class="settings-hint">
+          Drag to set the order cases use. Selected versions are the defaults: cases follow them until you change a
+          case's own selection.
+        </p>
+        <div id="default-products" class="product-choices sortable"></div>
+      </section>
+      <section class="settings-section" aria-labelledby="settings-tmds">
+        <h3 id="settings-tmds">
+          <img class="settings-logo" src="/assets/logos/trendmicro.svg" width="24" height="24" alt="" /> Trend Micro
+          Deep Security
+        </h3>
+        <label class="toggle">
+          <input type="checkbox" id="tmds-toggle" role="switch" />
+          Show TMDS Agent and Kernel Support Package support
+        </label>
+        <p class="settings-hint" id="tmds-hint">
+          Matches kernel fixes against the kernels bundled in Deep Security Agent 20 LTS and the published Kernel
+          Support Package list. Turn this off if you do not use Deep Security:
+          <span class="product-name">Is It Fixed</span> then hides all TMDS details and stops loading the inventory.
+        </p>
+        <p class="settings-hint" id="tmds-server-off" hidden>TMDS support data is turned off on this server.</p>
+      </section>
+      <section class="settings-section" aria-labelledby="settings-severity">
+        <h3 id="settings-severity">Severity</h3>
+        <label class="select-row">
+          Score shown for cases
+          <select id="cvss-version"></select>
+        </label>
+        <p class="settings-hint">
+          If a CVE has no score in this version, the next available version is shown and labelled.
+        </p>
+      </section>
+      <section class="settings-section" aria-labelledby="settings-appearance">
+        <h3 id="settings-appearance">Appearance</h3>
+        <label class="select-row">
+          Theme
+          <select id="theme">
+            <option value="system">System (default)</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </label>
+      </section>
+      <section class="settings-section" aria-labelledby="settings-updates">
+        <h3 id="settings-updates">Updates &amp; notifications</h3>
+        <label class="toggle">
+          <input type="checkbox" id="auto-refresh" role="switch" />
+          Check cases every hour while <span class="product-name">Is It Fixed</span> is open
+        </label>
+        <p class="settings-hint">
+          The server also re-checks your cases hourly while this tab is closed. You are told only about changes you can
+          act on: a new status, a newly published fix or mitigation, new Trend Micro support, or a rejected CVE. Source
+          timestamps, notes and advisory edits stay quiet.
+        </p>
+        <p class="settings-hint">
+          Changed cases move to the top of the sidebar with a <strong>New</strong> marker and the changed rows are
+          highlighted. Desktop notifications are optional and need permission (HTTPS or localhost).
+        </p>
+        <div class="settings-row">
+          <button type="button" id="notifications">Enable desktop notifications</button>
+          <span id="notification-status" class="muted" role="status"></span>
+        </div>
+      </section>
+      <section class="settings-section" aria-labelledby="settings-shortcuts">
+        <h3 id="settings-shortcuts">Keyboard shortcuts</h3>
+        <dl class="keyboard-shortcuts">
+          <div>
+            <dt>Open a case</dt>
+            <dd><kbd>/</kbd></dd>
+          </div>
+          <div>
+            <dt>Search your cases</dt>
+            <dd><kbd>S</kbd> or <kbd id="search-chord">Ctrl+K</kbd></dd>
+          </div>
+        </dl>
+      </section>
+      <section class="settings-section" aria-labelledby="settings-backup">
+        <h3 id="settings-backup">Backup</h3>
+        <div class="actions">
+          <button type="button" id="export">Export workspace ↓</button>
+          <label class="button">
+            Restore backup ↑
+            <input id="restore" type="file" accept="application/json,.json" hidden />
+          </label>
+        </div>
+        <p class="settings-hint">
+          Backups include cases, source snapshots and settings. Browser storage can be cleared; export a backup to keep
+          a copy.
+        </p>
+      </section>
+    </dialog>
+    <dialog id="disclaimer-dialog" aria-labelledby="disclaimer-title" aria-describedby="disclaimer-text">
+      <h2 id="disclaimer-title">Before you start</h2>
+      <p id="disclaimer-text">
+        <span class="product-name">Is It Fixed</span> is an informational tool. Data comes from public vendor sources
+        and may be incomplete, delayed or wrong. No warranty — use at your own discretion and verify with the vendor
+        before acting. Not affiliated with or endorsed by Red Hat, SUSE, Canonical, Debian, Alpine, Microsoft or Trend
+        Micro.
+      </p>
+      <p class="disclaimer-privacy">
+        Your cases and settings stay in this browser. To keep your cases up to date, the server receives their CVE IDs,
+        the OS vendors you selected and a random workspace ID created in this browser, which does not identify you. No
+        cookies, no tracking.
+      </p>
+      <p class="disclaimer-links" hidden>
+        <a href="/imprint" data-legal-link="imprint" hidden>Imprint</a>
+        <a href="/privacy" data-legal-link="privacy" hidden>Privacy policy</a>
+      </p>
+      <button type="button" id="disclaimer-accept" class="primary full">I understand</button>
+    </dialog>
+    <div id="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="/src/app.js"></script>
+  </body>
+</html>

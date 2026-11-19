@@ -2,14 +2,25 @@ import asyncio
 import json
 from pathlib import Path
 
-from fastapi.testclient import TestClient
 import httpx
 import pytest
+from fastapi.testclient import TestClient
 
-from backend.cache import Cache, RETENTION
-import backend.main
+from backend.cache import RETENTION, Cache
 from backend.main import Service, create_app
-from backend.providers import DEADLINES, NotPublished, PRODUCTS, Providers, csaf, describe, ubuntu, debian, alpine
+from backend.providers import (
+    DEADLINES,
+    PRODUCTS,
+    NotPublished,
+    Providers,
+    alpine,
+    alpine_evidence,
+    csaf,
+    debian,
+    describe,
+    ubuntu,
+)
+from backend.settings import Settings
 
 CVE = "CVE-2026-98432"
 WORKSPACE = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
@@ -56,7 +67,24 @@ class FakeProviders:
             data, metadata = csaf(FIXTURE, cve, "sles")
         else:
             data, metadata = {"rhel9": []}, {}
-        return data, dict(url="https://vendor.example/source.json", checked=self.clock() * 1000, mode="API cache", **metadata)
+        return data, dict(
+            url="https://vendor.example/source.json", checked=self.clock() * 1000, mode="API cache", **metadata
+        )
+
+
+TEST_SETTINGS = dict(
+    manual_refresh=True,
+    rate_limit_requests=0,
+    rate_limit_lookups=0,
+    rate_limit_lookups_global=0,
+    rate_limit_watches=0,
+    admin_port=None,
+)
+
+
+def make_app(path, providers, clock, **overrides):
+    settings = Settings(**{**TEST_SETTINGS, **overrides})
+    return create_app(path, providers=providers, clock=clock, background=False, settings=settings)
 
 
 @pytest.fixture
@@ -68,7 +96,7 @@ def setup(tmp_path):
 
 def test_api_cache_force_cooldown_and_validation(setup):
     clock, providers, path = setup
-    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+    with TestClient(make_app(path, providers, clock)) as client:
         assert client.get("/api/health").status_code == 200
         for url in ("/api/cves/invalid", f"/api/cves/{CVE}?families=http://evil", f"/api/cves/{CVE}?refresh=invalid"):
             assert client.get(url).status_code == 422
@@ -89,12 +117,12 @@ def test_api_cache_force_cooldown_and_validation(setup):
 
 def test_watched_cases_survive_closed_browsers_then_expire_after_unwatch(setup):
     clock, providers, path = setup
-    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+    with TestClient(make_app(path, providers, clock)) as client:
         watches = f"/api/workspaces/{WORKSPACE}/watches"
         assert client.put(watches, json={"cases": [{"id": CVE, "families": ["sles"]}]}).status_code == 200
         body = client.get(f"/api/cves/{CVE}?families=sles").json()
         assert body["cache"]["watched"] and body["cache"]["expiresAt"] is None
-        clock.now += 30 * 86400
+        clock.now += 29 * 86400  # Within the 30-day workspace inactivity limit.
         client.portal.call(client.app.state.service.tick)
         assert client.app.state.service.cache.get(CVE) is not None
         assert len(providers.calls) == 4  # Background refreshed while no browser requested it.
@@ -113,7 +141,7 @@ def test_watched_cases_survive_closed_browsers_then_expire_after_unwatch(setup):
 
 def test_last_workspace_removal_starts_timer_and_rewatch_cancels_it(setup):
     clock, providers, path = setup
-    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+    with TestClient(make_app(path, providers, clock)) as client:
         for workspace in (WORKSPACE, OTHER):
             client.put(f"/api/workspaces/{workspace}/watches", json={"cases": [{"id": CVE, "families": []}]})
         client.get(f"/api/cves/{CVE}?families=")
@@ -128,7 +156,7 @@ def test_last_workspace_removal_starts_timer_and_rewatch_cancels_it(setup):
 
 def test_watch_validation_rejects_notes_and_unknown_sources(setup):
     clock, providers, path = setup
-    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+    with TestClient(make_app(path, providers, clock)) as client:
         url = f"/api/workspaces/{WORKSPACE}/watches"
         for cases in ([{"id": CVE, "families": ["unknown"]}], [{"id": CVE, "notes": "private"}], [{"id": "bad"}]):
             assert client.put(url, json={"cases": cases}).status_code == 422
@@ -137,7 +165,7 @@ def test_watch_validation_rejects_notes_and_unknown_sources(setup):
 
 def test_source_failure_preserves_previous_evidence_and_timestamps(setup):
     clock, providers, path = setup
-    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+    with TestClient(make_app(path, providers, clock)) as client:
         url = f"/api/cves/{CVE}?families=sles&refresh=true"
         initial = client.get(url).json()
         providers.fail, clock.now = True, clock.now + 61
@@ -145,21 +173,25 @@ def test_source_failure_preserves_previous_evidence_and_timestamps(setup):
         assert failed["vendorData"]["evidence"] == initial["vendorData"]["evidence"]
         assert failed["vendorData"]["sources"]["sles"]["checked"] == initial["vendorData"]["sources"]["sles"]["checked"]
         assert failed["checked"] == initial["checked"]
-        assert "offline" in failed["error"]
-        assert "offline" in failed["vendorData"]["sources"]["sles"]["error"]
+        # Raw exception text never reaches the API; the category does.
+        assert failed["error"] == "CVE source unavailable: invalid data from source"
+        assert failed["vendorData"]["sources"]["sles"]["error"] == "Vendor source unavailable: invalid data from source"
+        assert "offline" not in json.dumps(failed)
 
 
 def test_empty_failed_lookup_is_not_a_safe_result(setup):
     clock, providers, path = setup
     providers.fail = True
-    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+    with TestClient(make_app(path, providers, clock)) as client:
         assert client.get(f"/api/cves/{CVE}?families=sles").status_code == 502
 
 
 def test_cache_and_watches_survive_restart_and_startup_prunes_expired_data(setup):
     clock, providers, path = setup
+
     def app():
-        return create_app(path, providers=providers, clock=clock, background=False)
+        return make_app(path, providers, clock)
+
     with TestClient(app()) as client:
         client.put(f"/api/workspaces/{WORKSPACE}/watches", json={"cases": [{"id": CVE, "families": []}]})
         client.get(f"/api/cves/{CVE}?families=")
@@ -174,6 +206,7 @@ def test_cache_and_watches_survive_restart_and_startup_prunes_expired_data(setup
 
 def test_concurrent_lookups_share_one_upstream_refresh(setup):
     clock, providers, path = setup
+
     async def run():
         cache = Cache(path)
         try:
@@ -182,6 +215,7 @@ def test_concurrent_lookups_share_one_upstream_refresh(setup):
             assert len(providers.calls) == 2
         finally:
             cache.close()
+
     asyncio.run(run())
 
 
@@ -213,7 +247,18 @@ def test_csaf_recommended_scope_major_versions_and_missing_cve():
 
 
 def test_distribution_semantics_are_preserved():
-    data = ubuntu({"id": CVE, "packages": [{"name": "linux", "statuses": [{"release_codename": "noble", "status": "pending", "description": "6.8.0"}]}]}, CVE)
+    data = ubuntu(
+        {
+            "id": CVE,
+            "packages": [
+                {
+                    "name": "linux",
+                    "statuses": [{"release_codename": "noble", "status": "pending", "description": "6.8.0"}],
+                }
+            ],
+        },
+        CVE,
+    )
     assert data["ubuntu2404"][0]["status"] == "affected"
     assert data["ubuntu2404"][0]["fix"] == []
     data = debian({"linux": {CVE: {"releases": {"bookworm": {"status": "resolved", "fixed_version": "0"}}}}}, CVE)
@@ -221,50 +266,115 @@ def test_distribution_semantics_are_preserved():
     assert alpine({"packages": []}, CVE) == []
 
 
-def test_http_provider_shares_bulk_feeds_and_expires_memory_cache():
+ALPINE_DOC = {
+    "packages": [
+        {"pkg": {"name": "openssl", "secfixes": {"3.3.2-r0": [f"{CVE} GHSA-xxxx", "CVE-2026-1"], "3.3.1-r0": []}}},
+        {"pkg": {"name": "curl", "secfixes": {"8.9.0-r0": [CVE]}}},
+    ]
+}
+DEBIAN_DOC = {
+    "linux": {
+        CVE: {
+            "releases": {"bookworm": {"status": "open"}, "trixie": {"status": "resolved", "fixed_version": "6.12.1"}}
+        },
+        "CVE-2026-1": {"releases": {"bullseye": {"status": "open"}}},
+    },
+    "zlib": {CVE: {"releases": {"bookworm": {"status": "resolved", "fixed_version": "0", "nodsa": "Minor issue"}}}},
+}
+
+
+def test_http_provider_shares_bulk_feeds_and_keeps_only_compact_indexes():
     clock, calls = Clock(), []
+
     async def handler(request):
         calls.append(str(request.url))
-        return httpx.Response(200, json={"packages": []})
+        return httpx.Response(200, json=ALPINE_DOC)
+
     async def run():
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             provider = Providers(client, clock)
-            await asyncio.gather(*(provider.get_json("https://secdb.alpinelinux.org/v3.22/main.json", shared=True) for _ in range(4)))
+            url = "https://secdb.alpinelinux.org/v3.22/main.json"
+            indexes = await asyncio.gather(*(provider.get_feed(url, "alpine") for _ in range(4)))
             assert len(calls) == 1
+            assert indexes[0] == {
+                CVE: [("openssl", "3.3.2-r0"), ("curl", "8.9.0-r0")],
+                "GHSA-xxxx": [("openssl", "3.3.2-r0")],
+                "CVE-2026-1": [("openssl", "3.3.2-r0")],
+            }
+            assert alpine_evidence(indexes[0][CVE]) == alpine(ALPINE_DOC, CVE)
+            assert provider.memory.used == 0
             clock.now += 3600
             provider.prune()
-            assert not provider.raw
+            assert not provider.feeds
+
+    asyncio.run(run())
+
+
+def test_debian_feed_is_indexed_in_a_child_process(tmp_path):
+    async def handler(request):
+        return httpx.Response(200, json=DEBIAN_DOC)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            provider = Providers(client, Clock(), spool_dir=tmp_path)
+            result, metadata = await provider.vendor("debian", CVE)
+            assert metadata["url"].startswith("https://security-tracker.debian.org/")
+            assert result == debian(DEBIAN_DOC, CVE)
+            assert [(e["name"], e["status"]) for e in result["debian12"]] == [
+                ("linux", "affected"),
+                ("zlib", "unaffected"),
+            ]
+            assert result["debian13"][0]["fix"] == ["linux 6.12.1"]
+            assert result["debian12"][1]["note"] == ""  # no-dsa only qualifies open issues
+            index = provider.feeds["https://security-tracker.debian.org/tracker/data/json"][0]
+            assert set(index) == {CVE} and isinstance(index[CVE], bytes)  # compact JSON per CVE, other releases dropped
+            assert not list(tmp_path.iterdir())  # the spooled download is removed
+
+    asyncio.run(run())
+
+
+def test_invalid_debian_feed_is_a_source_error(tmp_path):
+    async def handler(request):
+        return httpx.Response(200, text="[1, 2")
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            provider = Providers(client, Clock(), spool_dir=tmp_path)
+            with pytest.raises(ValueError):
+                await provider.vendor("debian", CVE)
+            assert describe(ValueError()) == "invalid data from source" and not provider.feeds
+
     asyncio.run(run())
 
 
 def test_unknown_cve_is_404_and_not_cached(setup):
     clock, providers, path = setup
     providers.unknown.add("CVE-2026-9999991")
-    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+    with TestClient(make_app(path, providers, clock)) as client:
         response = client.get("/api/cves/CVE-2026-9999991?families=debian,sles")
         assert response.status_code == 404
         assert "not found" in response.json()["detail"]
         assert client.app.state.service.cache.ids() == []
 
 
-def test_full_cache_evicts_oldest_unwatched_entry(setup, monkeypatch):
+def test_full_cache_evicts_oldest_unwatched_entry(setup):
     clock, providers, path = setup
-    monkeypatch.setattr(backend.main, "CAPACITY", 2)
-    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+    with TestClient(make_app(path, providers, clock, max_cached_cves=2, max_watched_cves=1)) as client:
         cache = client.app.state.service.cache
         client.put(f"/api/workspaces/{WORKSPACE}/watches", json={"cases": [{"id": "CVE-2026-0001", "families": []}]})
         for cve in ("CVE-2026-0001", "CVE-2026-0002", "CVE-2026-0003"):
             clock.now += 1
             assert client.get(f"/api/cves/{cve}?families=").status_code == 200
         assert sorted(cache.ids()) == ["CVE-2026-0001", "CVE-2026-0003"]
-        client.put(f"/api/workspaces/{WORKSPACE}/watches", json={"cases": [{"id": "CVE-2026-0001", "families": []}, {"id": "CVE-2026-0003", "families": []}]})
-        assert client.get("/api/cves/CVE-2026-0004?families=").status_code == 429
+        # Even at the watched-CVE limit, the reserved cache slot keeps on-demand lookups available.
+        assert client.get("/api/cves/CVE-2026-0004?families=").status_code == 200
+        assert sorted(cache.ids()) == ["CVE-2026-0001", "CVE-2026-0004"]
 
 
 def test_unpublished_vendor_document_is_not_an_outage(setup):
     clock, providers, path = setup
     providers.unpublished.add("sles")
-    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+    with TestClient(make_app(path, providers, clock)) as client:
         body = client.get(f"/api/cves/{CVE}?families=sles").json()
         source = body["vendorData"]["sources"]["sles"]
         assert "not published" in source["notPublished"] and "error" not in source and source["checked"]
@@ -273,7 +383,7 @@ def test_unpublished_vendor_document_is_not_an_outage(setup):
 
 def test_new_vendor_selection_fetches_only_that_vendor(setup):
     clock, providers, path = setup
-    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+    with TestClient(make_app(path, providers, clock)) as client:
         client.get(f"/api/cves/{CVE}?families=sles")
         attempted = client.app.state.service.cache.get(CVE)["attempted"]
         providers.calls.clear()
@@ -287,7 +397,7 @@ def test_slow_vendor_times_out_without_blocking_others(setup, monkeypatch):
     clock, providers, path = setup
     providers.slow.add("rhel")
     monkeypatch.setitem(DEADLINES, "rhel", 0.05)
-    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+    with TestClient(make_app(path, providers, clock)) as client:
         body = client.get(f"/api/cves/{CVE}?families=sles,rhel").json()
         assert body["vendorData"]["sources"]["rhel"]["error"] == "Vendor source unavailable: request timed out"
         assert body["vendorData"]["evidence"]["sles15"]
@@ -302,11 +412,33 @@ def test_source_errors_are_short():
 def test_suse_cloud_images_are_excluded_from_os_rows():
     doc = {
         "document": {"csaf_version": "2.0", "references": []},
-        "product_tree": {"relationships": [
-            {"product_reference": "openssh", "relates_to_product_reference": "SUSE Linux Enterprise Server 15 SP6", "full_product_name": {"product_id": "sp6:openssh", "name": "openssh as component of SUSE Linux Enterprise Server 15 SP6"}},
-            {"product_reference": "openssh", "relates_to_product_reference": "SLES 15 SP5 CHOST Images for Google", "full_product_name": {"product_id": "img:openssh", "name": "openssh as component of SLES 15 SP5 CHOST Images for Google"}},
-        ]},
-        "vulnerabilities": [{"cve": CVE, "product_status": {"fixed": ["sp6:openssh"], "known_affected": ["img:openssh"]}, "remediations": []}],
+        "product_tree": {
+            "relationships": [
+                {
+                    "product_reference": "openssh",
+                    "relates_to_product_reference": "SUSE Linux Enterprise Server 15 SP6",
+                    "full_product_name": {
+                        "product_id": "sp6:openssh",
+                        "name": "openssh as component of SUSE Linux Enterprise Server 15 SP6",
+                    },
+                },
+                {
+                    "product_reference": "openssh",
+                    "relates_to_product_reference": "SLES 15 SP5 CHOST Images for Google",
+                    "full_product_name": {
+                        "product_id": "img:openssh",
+                        "name": "openssh as component of SLES 15 SP5 CHOST Images for Google",
+                    },
+                },
+            ]
+        },
+        "vulnerabilities": [
+            {
+                "cve": CVE,
+                "product_status": {"fixed": ["sp6:openssh"], "known_affected": ["img:openssh"]},
+                "remediations": [],
+            }
+        ],
     }
     data, metadata = csaf(doc, CVE, "sles")
     assert [e["status"] for e in data["sles15"]] == ["fixed"]
@@ -321,36 +453,109 @@ def test_progressive_sources_publish_before_slow_vendor(tmp_path):
     async def check():
         clock = Clock()
         gate = asyncio.Event()
+
         class Delayed(FakeProviders):
             async def vendor(self, family, cve):
-                if family == 'ubuntu':
+                if family == "ubuntu":
                     await gate.wait()
                 return await super().vendor(family, cve)
-        cache = Cache(tmp_path / 'progress.sqlite')
+
+        cache = Cache(tmp_path / "progress.sqlite")
         service = Service(cache, Delayed(clock), clock)
         snapshots = []
         ready = asyncio.Event()
+
         def publish(payload):
             snapshots.append(payload)
-            if payload.get('record'):
+            if payload.get("record"):
                 ready.set()
-        task = asyncio.create_task(service.get(CVE, {'rhel', 'ubuntu'}, publish=publish))
+
+        task = asyncio.create_task(service.get(CVE, {"rhel", "ubuntu"}, publish=publish))
         await asyncio.wait_for(ready.wait(), 1)
         assert not task.done()
-        assert 'ubuntu' not in snapshots[-1]['vendorData']['sources']
+        assert "ubuntu" not in snapshots[-1]["vendorData"]["sources"]
         gate.set()
         result = await task
-        assert 'ubuntu' in result['vendorData']['sources']
-        assert 'ubuntu' not in snapshots[0]['vendorData']['sources']
+        assert "ubuntu" in result["vendorData"]["sources"]
+        assert "ubuntu" not in snapshots[0]["vendorData"]["sources"]
         cache.close()
+
     asyncio.run(check())
 
 
 def test_case_links_serve_the_app_and_other_paths_stay_private(setup):
     clock, providers, path = setup
-    with TestClient(create_app(path, providers=providers, clock=clock, background=False)) as client:
+    with TestClient(make_app(path, providers, clock)) as client:
         for url in ("/CVE-2024-3094", "/cve-2024-3094"):
             response = client.get(url)
             assert response.status_code == 200 and "<script" in response.text
         for url in ("/cache.sqlite3", "/backend", "/CVE-2024-3094.json"):
             assert client.get(url).status_code == 404
+
+
+@pytest.mark.parametrize("force", [False, True])
+@pytest.mark.parametrize("queue", ["case_lock", "refresh_capacity"])
+def test_deadline_marks_stale_sources_while_refresh_is_queued(setup, force, queue):
+    clock, providers, path = setup
+
+    async def run():
+        cache = Cache(path, clock)
+        service = Service(cache, providers, clock)
+        try:
+            original = await service.get(CVE, {"sles"})
+            clock.now += 61 if force else 3601
+            blocker = service.locks[CVE] if queue == "case_lock" else asyncio.Semaphore(0)
+            if queue == "case_lock":
+                await blocker.acquire()
+            else:
+                service.capacity = blocker
+            try:
+                result = await service.get(CVE, {"sles"}, force=force, deadline=0.01)
+            finally:
+                blocker.release()
+            assert result["record"] == original["record"]
+            assert result["vendorData"]["evidence"] == original["vendorData"]["evidence"]
+            assert result["error"] == "CVE source unavailable: request timed out"
+            assert result["vendorData"]["sources"]["sles"]["error"] == "Vendor source unavailable: request timed out"
+            assert len(providers.calls) == 2  # The queued refresh never contacted upstream.
+        finally:
+            cache.close()
+
+    asyncio.run(run())
+
+
+def test_deadline_keeps_completed_source_errors_while_another_source_is_pending(setup):
+    clock, providers, path = setup
+
+    async def run():
+        cache = Cache(path, clock)
+        service = Service(cache, providers, clock)
+        try:
+            await service.get(CVE, {"sles", "debian"})
+            clock.now += 3601
+            vendor = providers.vendor
+
+            async def refresh_vendor(family, cve):
+                if family == "sles":
+                    raise ValueError("bad upstream data")
+                await asyncio.Event().wait()
+                return await vendor(family, cve)
+
+            providers.vendor = refresh_vendor
+            completed_errors = []
+
+            def publish(payload):
+                error = payload["vendorData"]["sources"].get("sles", {}).get("error")
+                if error:
+                    completed_errors.append(error)
+
+            result = await service.get(CVE, {"sles", "debian"}, deadline=0.05, publish=publish)
+            assert completed_errors
+            assert result["vendorData"]["sources"]["sles"]["error"] == completed_errors[-1]
+            assert "timed out" not in completed_errors[-1]
+            assert result["vendorData"]["sources"]["debian"]["error"] == "Vendor source unavailable: request timed out"
+            assert "error" not in result  # The CVE record refresh completed successfully.
+        finally:
+            cache.close()
+
+    asyncio.run(run())

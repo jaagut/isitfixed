@@ -1,0 +1,7 @@
+# Revisions that `git blame` can skip. GitHub's blame view applies this file automatically; locally, opt in per call
+# with `git blame --ignore-revs-file .git-blame-ignore-revs <file>` when formatting noise gets in the way.
+#
+# 4b19ac3 "Reformat code with ruff and prettier": mostly formatting, but it also contains behavior-neutral
+# restructuring of src/app.js and of range() in src/data.js. Skipping it can attribute those lines to older commits,
+# so blame src/app.js and src/data.js without this file when you need their exact history.
+4b19ac3e1a002f88f928606acbc0dca4f04cce42

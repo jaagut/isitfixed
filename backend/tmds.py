@@ -1,94 +1,132 @@
 """Hourly, checksum-verified inventory of bundled LTS 20 VFS descriptors."""
+
 import asyncio
 import hashlib
 import io
 import json
-import re
+import logging
+import tempfile
 import time
 import zipfile
+
 from .cache import RETENTION
+from .errors import log_failure
+from .fetch import MIB, download_to, read_limited
+from .jobs import HourlyJob
 
-FEED = 'https://s3.amazonaws.com/help-deepsecurity-trendmicro/Resources/CustomScripts/download-center/data/ds-dlc-feed-src/en-us/products_lts.json'
-STREAMS = {**{f'rhel{v}': f'RedHat_EL{v}' for v in (8,9,10)}, **{f'debian{v}': f'Debian_{v}' for v in (12,13)}, **{f'sles{v}': f'SuSE_{v}' for v in (15,16)}, **{f'ubuntu{v}': f'Ubuntu_{v[:2]}.{v[2:]}' for v in ('2004','2204','2404','2604')}}
+FEED = "https://s3.amazonaws.com/help-deepsecurity-trendmicro/Resources/CustomScripts/download-center/data/ds-dlc-feed-src/en-us/products_lts.json"
+FEED_LIMIT, FEED_DEADLINE = 32 * MIB, 120
+AGENT_LIMIT, AGENT_DEADLINE = 300 * MIB, 600
+# Agent archives up to this size stay in memory; larger ones spool to a temporary file (/tmp in the container).
+SPOOL_IN_MEMORY = 8 * MIB
+DOWNLOAD_PREFIX = "https://files.trendmicro.com/products/deepsecurity/en/20.0/"
+STREAMS = {
+    **{f"rhel{v}": f"RedHat_EL{v}" for v in (8, 9, 10)},
+    **{f"debian{v}": f"Debian_{v}" for v in (12, 13)},
+    **{f"sles{v}": f"SuSE_{v}" for v in (15, 16)},
+    **{f"ubuntu{v}": f"Ubuntu_{v[:2]}.{v[2:]}" for v in ("2004", "2204", "2404", "2604")},
+}
+logger = logging.getLogger("isitfixed.tmds")
 
 
-def inspect_archive(data, card):
-    if hashlib.sha256(data).hexdigest() != card['sha256'].lower():
-        raise ValueError('Agent checksum mismatch')
-    prefix = 'Plugin-VFS_Filter_'
+def inspect_archive(source, card):
+    """Verify the published SHA-256 and list bundled ``Plugin-VFS_Filter_<kernel>`` descriptors.
+
+    ``source`` is the archive as bytes or a seekable binary file; nothing is extracted or executed.
+    """
+    if isinstance(source, (bytes, bytearray)):
+        source = io.BytesIO(source)
+    source.seek(0)
+    if hashlib.file_digest(source, "sha256").hexdigest() != card["sha256"].lower():
+        raise ValueError("Agent checksum mismatch")
+    source.seek(0)
+    prefix = "Plugin-VFS_Filter_"
     suffix = f"-{card['platform']}-{card['release']}."
     entries = []
-    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+    with zipfile.ZipFile(source) as archive:
         for name in archive.namelist():
-            if name.startswith(prefix) and suffix in name and name.endswith('.dsp'):
-                entries.append(name[len(prefix):name.index(suffix)])
+            if name.startswith(prefix) and suffix in name and name.endswith(".dsp"):
+                entries.append(name[len(prefix) : name.index(suffix)])
     return sorted(set(entries))
 
 
-class Inventory:
-    def __init__(self, cache, client, clock=time.time):
-        self.cache, self.client, self.clock = cache, client, clock
-        self.lock = asyncio.Lock()
-        self.attempted = 0
-        self.error = None
-        cache.db.execute('CREATE TABLE IF NOT EXISTS agents (filename TEXT PRIMARY KEY, product TEXT, payload TEXT, seen REAL)')
-        cache.db.commit()
+def latest_cards(feed):
+    """The newest enabled LTS 20 agent card per supported OS stream and architecture."""
+    cards = [
+        c
+        for g in feed
+        if g.get("name") == "Agent"
+        for c in g["cards"]
+        if c.get("majorMinor") == "20.0" and not c.get("disabled") and c.get("platform") in STREAMS.values()
+    ]
+    latest = {}
+    for card in cards:
+        key = (card["platform"], card["filename"].split(".")[-2])
+        if key not in latest or card["releaseTimestamp"] > latest[key]["releaseTimestamp"]:
+            latest[key] = card
+    return list(latest.values())
 
-    async def tick(self):
-        if self.lock.locked() or self.clock()-self.attempted < 3600:
-            return
-        async with self.lock:
-            self.attempted = self.clock()
+
+class Inventory(HourlyJob):
+    name = "tmds-agents"
+    # Heartbeats come before the feed download and before every agent archive (download plus inspection).
+    step_deadline = AGENT_DEADLINE + 60
+
+    async def run(self):
+        feed = json.loads(await read_limited(self.client, FEED, limit=FEED_LIMIT, deadline=FEED_DEADLINE))
+        # Start with the latest release for each OS/architecture stream; retain previously observed releases for
+        # ten days after supersession. One failing archive does not block the others.
+        failure = None
+        for card in latest_cards(feed):
+            self.beat = time.monotonic()
             try:
-                response = await self.client.get(FEED)
-                response.raise_for_status()
-                cards = [c for g in response.json() if g.get('name') == 'Agent' for c in g['cards'] if c.get('majorMinor') == '20.0' and not c.get('disabled') and c.get('platform') in STREAMS.values()]
-                # Start with the latest release for each OS/architecture stream; retain
-                # previously observed releases for ten days after supersession.
-                latest = {}
-                for card in cards:
-                    arch = card['filename'].split('.')[-2]
-                    key = (card['platform'], arch)
-                    if key not in latest or card['releaseTimestamp'] > latest[key]['releaseTimestamp']:
-                        latest[key] = card
-                for card in latest.values():
-                    filename = card['filename']
-                    product = next(p for p, stream in STREAMS.items() if stream == card['platform'])
-                    existing = self.cache.db.execute('SELECT payload FROM agents WHERE filename=?', (filename,)).fetchone()
-                    if existing:
-                        with self.cache.db:
-                            self.cache.db.execute('UPDATE agents SET seen=? WHERE filename=?', (self.clock(), filename))
-                        continue
-                    url = card['download']
-                    if not url.startswith('https://files.trendmicro.com/products/deepsecurity/en/20.0/') or not filename.endswith('.zip'):
-                        continue
-                    data = bytearray()
-                    async with self.client.stream('GET', url, timeout=180, follow_redirects=False) as download:
-                        download.raise_for_status()
-                        async for chunk in download.aiter_bytes():
-                            data.extend(chunk)
-                            if len(data) > 300*1024*1024:
-                                raise ValueError('Agent exceeds download limit')
-                    kernels = await asyncio.to_thread(inspect_archive, data, card)
-                    payload = {k: card.get(k) for k in ('filename','release','platform','download','sha256','releaseDate')}
-                    payload.update(kernels=kernels, checked=int(self.clock()*1000), architecture=filename.split('.')[-2])
-                    with self.cache.db:
-                        self.cache.db.execute('INSERT OR REPLACE INTO agents VALUES (?,?,?,?)', (filename, product, json.dumps(payload), self.clock()))
-                self.error = None
+                await self.record(card)
+            except asyncio.CancelledError:
+                raise
             except Exception as error:
-                self.error = str(error)
-            finally:
-                with self.cache.db:
-                    self.cache.db.execute('DELETE FROM agents WHERE seen <= ?', (self.clock()-RETENTION,))
+                log_failure(f"{self.name} ({card.get('platform')})", error)
+                failure = failure or error
+        if failure:
+            raise failure
 
-    def snapshot(self):
-        rows = self.cache.db.execute('SELECT product,payload FROM agents WHERE seen > ? ORDER BY seen DESC', (self.clock()-RETENTION,))
+    async def record(self, card):
+        filename = card["filename"]
+        product = next(p for p, stream in STREAMS.items() if stream == card["platform"])
+        db = self.cache.db
+        if db.execute("SELECT 1 FROM agents WHERE filename=?", (filename,)).fetchone():
+            with db:
+                db.execute("UPDATE agents SET seen=? WHERE filename=?", (self.clock(), filename))
+            return
+        url = card["download"]
+        if not url.startswith(DOWNLOAD_PREFIX) or not filename.endswith(".zip"):
+            return
+        with tempfile.SpooledTemporaryFile(max_size=SPOOL_IN_MEMORY) as archive:
+            await download_to(
+                self.client, url, archive, limit=AGENT_LIMIT, deadline=AGENT_DEADLINE, follow_redirects=False
+            )
+            kernels = await asyncio.to_thread(inspect_archive, archive, card)
+        payload = {k: card.get(k) for k in ("filename", "release", "platform", "download", "sha256", "releaseDate")}
+        payload.update(kernels=kernels, checked=int(self.clock() * 1000), architecture=filename.split(".")[-2])
+        with db:
+            db.execute(
+                "INSERT OR REPLACE INTO agents VALUES (?,?,?,?)", (filename, product, json.dumps(payload), self.clock())
+            )
+
+    def cleanup(self):
+        with self.cache.db:
+            self.cache.db.execute("DELETE FROM agents WHERE seen <= ?", (self.clock() - RETENTION,))
+
+    def products(self):
+        rows = self.cache.db.execute(
+            "SELECT product,payload FROM agents WHERE seen > ? ORDER BY seen DESC", (self.clock() - RETENTION,)
+        )
         result = {}
         for row in rows:
-            result.setdefault(row['product'], []).append(json.loads(row['payload']))
-        return {'products': result, 'error': self.error, 'attempted': int(self.attempted*1000), 'source': FEED}
+            result.setdefault(row["product"], []).append(json.loads(row["payload"]))
+        return result
 
-    async def worker(self):
-        while True:
-            await self.tick()
-            await asyncio.sleep(60)
+    def snapshot(self):
+        return {"products": self.products(), **self.status(), "source": FEED}
+
+    def counts(self):
+        return {"releases": sum(len(items) for items in self.products().values())}

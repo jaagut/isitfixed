@@ -1,0 +1,4 @@
+minimumReleaseAge: 2880
+# esbuild works from its platform package; its postinstall script is not needed.
+allowBuilds:
+  esbuild: false

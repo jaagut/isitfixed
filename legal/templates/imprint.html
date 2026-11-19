@@ -1,0 +1,165 @@
+<!--
+  Template for the imprint (Impressum) of a Is It Fixed instance operated from Germany.
+  This is a template, not legal advice. Operators must review and adapt it to their own situation
+  before publishing (for example commercial operation, organisations, journalistic content).
+  The German text is authoritative; the English text is a convenience translation.
+  Placeholders ({{…}}) are filled from the LEGAL_* environment variables, see legal/README.md.
+  Blocks between <!- - if:name - -> and <!- - endif:name - -> are removed when that value is empty.
+-->
+<p class="legal-languages"><a href="#imprint-en" hreflang="en">English version</a></p>
+
+<section lang="de" id="imprint-de">
+  <h2>Impressum</h2>
+
+  <h3>Angaben gemäß § 5 DDG und § 18 Abs. 1 MStV</h3>
+  <address>
+    {{operator_name}}<br />
+    {{operator_address}}
+  </address>
+
+  <h3>Kontakt</h3>
+  <p>E-Mail: <a href="mailto:{{operator_email}}">{{operator_email}}</a></p>
+  <!-- if:operator_phone -->
+  <p>Telefon: {{operator_phone}}</p>
+  <!-- endif:operator_phone -->
+
+  <!-- if:responsible_person -->
+  <h3>Verantwortlich für den Inhalt nach § 18 Abs. 2 MStV</h3>
+  <p>{{responsible_person}}</p>
+  <!-- endif:responsible_person -->
+
+  <h3>Hinweis zu den angezeigten Daten</h3>
+  <p>
+    Is It Fixed ist ein kostenlos nutzbares, nicht-kommerzielles Informationswerkzeug. Die angezeigten Schwachstellen-
+    und Herstellerdaten werden automatisiert aus öffentlichen Quellen Dritter übernommen und nicht im Einzelfall
+    geprüft. Sie können unvollständig, verspätet oder fehlerhaft sein. Für Richtigkeit, Vollständigkeit und Aktualität
+    wird keine Gewähr übernommen. Bitte prüfen Sie Angaben beim jeweiligen Hersteller, bevor Sie darauf gestützt
+    handeln. Fehlende Daten bedeuten nicht, dass ein Produkt nicht betroffen ist. Für eigene Inhalte sind wir nach den
+    allgemeinen Gesetzen verantwortlich.
+  </p>
+
+  <h3>Haftung für Links</h3>
+  <p>
+    Diese Anwendung verweist auf Websites Dritter, insbesondere der Hersteller und Schwachstellendatenbanken. Diese
+    Links werden teilweise automatisch aus den Herstellerdaten erzeugt. Auf die Inhalte der verlinkten Seiten haben wir
+    keinen Einfluss; dafür ist der jeweilige Anbieter verantwortlich. Wir machen uns diese Inhalte nicht zu eigen.
+    Werden uns Rechtsverletzungen bekannt, entfernen wir die betreffenden Links umgehend.
+  </p>
+
+  <h3>Datenquellen, Lizenzen und Marken</h3>
+  <ul>
+    <li>CVE-Datensätze: <a href="https://www.cve.org/">CVE Program</a>.</li>
+    <li>
+      Red Hat CSAF/VEX: © Red Hat, Inc., lizenziert unter
+      <a href="https://creativecommons.org/licenses/by/4.0/deed.de">CC BY 4.0</a>; für die Anzeige normalisiert und
+      gekürzt.
+    </li>
+    <li>
+      SUSE CSAF/VEX: © SUSE, lizenziert unter
+      <a href="https://creativecommons.org/licenses/by/4.0/deed.de">CC BY 4.0</a>; für die Anzeige normalisiert und
+      gekürzt.
+    </li>
+    <li>
+      Ubuntu CVE Tracker (Canonical), Debian Security Tracker, Alpine secdb sowie Trend Micro Deep Security Download
+      Center und Liste der unterstützten Kernel, jeweils nach den Bedingungen des Anbieters.
+    </li>
+  </ul>
+  <p>
+    Jeder Fall verlinkt die verwendeten Originaldokumente. Herstellernamen und -logos dienen nur der Kennzeichnung der
+    jeweiligen Datenquelle und sind Marken ihrer Inhaber. Dieses Angebot steht in keiner Verbindung zu Red Hat, SUSE,
+    Canonical, Debian, Alpine, Microsoft oder Trend Micro und wird von diesen weder unterstützt noch empfohlen.
+  </p>
+
+  <!-- if:source_url -->
+  <h3>Quellcode</h3>
+  <p>
+    Is It Fixed ist Open-Source-Software unter der MIT-Lizenz. Quellcode:
+    <a href="{{source_url}}">{{source_url}}</a>
+  </p>
+  <!-- endif:source_url -->
+
+  <!--
+    Optional, only for traders (Unternehmer) with consumers as users; remove the comment markers to use it.
+    Non-commercial operators normally do not need this paragraph.
+  <h3>Verbraucherstreitbeilegung</h3>
+  <p>
+    Wir sind nicht bereit und nicht verpflichtet, an Streitbeilegungsverfahren vor einer Verbraucherschlichtungsstelle
+    teilzunehmen.
+  </p>
+  -->
+</section>
+
+<section lang="en" id="imprint-en">
+  <h2>Imprint</h2>
+  <p><em>Convenience translation. The German version above is authoritative.</em></p>
+
+  <h3>Information pursuant to § 5 DDG and § 18 (1) MStV</h3>
+  <address>
+    {{operator_name}}<br />
+    {{operator_address}}
+  </address>
+
+  <h3>Contact</h3>
+  <p>E-mail: <a href="mailto:{{operator_email}}">{{operator_email}}</a></p>
+  <!-- if:operator_phone -->
+  <p>Phone: {{operator_phone}}</p>
+  <!-- endif:operator_phone -->
+
+  <!-- if:responsible_person -->
+  <h3>Responsible for content pursuant to § 18 (2) MStV</h3>
+  <p>{{responsible_person}}</p>
+  <!-- endif:responsible_person -->
+
+  <h3>About the data shown</h3>
+  <p>
+    Is It Fixed is a free-to-use, non-commercial informational tool. The vulnerability and vendor data shown is taken
+    automatically from public third-party sources and is not reviewed case by case. It may be incomplete, delayed or
+    wrong. No warranty is given for its accuracy, completeness or timeliness. Please verify information with the vendor
+    before acting on it. Missing data does not mean that a product is not affected. We are responsible for our own
+    content under the general laws.
+  </p>
+
+  <h3>Liability for links</h3>
+  <p>
+    This application links to third-party websites, in particular vendors and vulnerability databases. Some of these
+    links are generated automatically from vendor data. We have no influence on the content of linked pages; their
+    providers are responsible for it. We do not adopt this content as our own. If we become aware of any infringement,
+    we will remove the link in question promptly.
+  </p>
+
+  <h3>Data sources, licenses and trademarks</h3>
+  <ul>
+    <li>CVE records: <a href="https://www.cve.org/">CVE Program</a>.</li>
+    <li>
+      Red Hat CSAF/VEX: © Red Hat, Inc., licensed under
+      <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>; normalized and reduced for display.
+    </li>
+    <li>
+      SUSE CSAF/VEX: © SUSE, licensed under <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>;
+      normalized and reduced for display.
+    </li>
+    <li>
+      Ubuntu CVE tracker (Canonical), Debian security tracker, Alpine secdb, and the Trend Micro Deep Security download
+      center and supported kernels list, each under the provider's terms.
+    </li>
+  </ul>
+  <p>
+    Every case links the original documents used. Vendor names and logos only identify the data source and are
+    trademarks of their respective owners. This service is not affiliated with or endorsed by Red Hat, SUSE, Canonical,
+    Debian, Alpine, Microsoft or Trend Micro.
+  </p>
+
+  <!-- if:source_url -->
+  <h3>Source code</h3>
+  <p>
+    Is It Fixed is open-source software under the MIT License. Source code:
+    <a href="{{source_url}}">{{source_url}}</a>
+  </p>
+  <!-- endif:source_url -->
+
+  <!--
+    Optional, only for traders; see the German block above.
+  <h3>Consumer dispute resolution</h3>
+  <p>We are neither willing nor obliged to participate in dispute resolution proceedings before a consumer arbitration board.</p>
+  -->
+</section>

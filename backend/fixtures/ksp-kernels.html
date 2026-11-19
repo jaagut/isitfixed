@@ -1,0 +1,237 @@
+<!DOCTYPE HTML>
+<!-- Reduced excerpt of Trend Micro's "Deep Security 20.0 Supported Linux Kernels" page (test data only). -->
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>Deep Security 20.0 Supported Linux Kernels</title>
+</head>
+<body>
+    <img src="tm_logo.jpg" alt="logo"/>
+    <h1>Deep Security 20.0 Supported Linux Kernels (November 18, 2026, 12:16 UTC)</h1>
+
+    <div class="title"><h2 id="intro">Introduction</h2></div>
+    This document lists the specific Linux kernels supported for each platform.<br>
+    <div>
+        <div class="col-12">
+            <h5>
+                <p>
+                    <note> Note. </note><br />
+                    &nbsp;&nbsp; * &Delta;: Only supports WRS/FW/IPS features in the latest KSP.<br />
+                    &nbsp;&nbsp; * &#x2460;: For C1WS and Deep Security.<br />
+                    &nbsp;&nbsp; * To use KSP 20.0.1, the future main stream kernel support package in 2024, please ensure DSM version is 20.0.883 or later, and DSA version is 20.0.0-8453 or later. If customer environment does not fulfill the requirement, please use KSP 20.0.0; For more details, see <strong><a href="https://success.trendmicro.com/">this article</a></strong>.<br />
+                </p>
+            </h5>
+        </div>
+    </div>
+
+    <div>
+        <div class="title"><h2 id="package">Latest Kernel Support Packages</h2></div>
+        <div class="col-12">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Linux Platform</th>
+                        <th>32/64</th>
+                        <th>Kernel Support Package</th>
+                        <th>SHA256 hash</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><a href="#amazon264">amazon2</a></td>
+                        <td>64</td>
+                        <td><a href="http://files.trendmicro.com/products/deepsecurity/en/20.0/KernelSupport-amzn2-20.0.3-36040.x86_64.zip">KernelSupport-amzn2-20.0.3-36040.x86_64.zip</a></td>
+                        <td>facc2dad9d7b111d701e186127beb2341c021e4cc1e9c7abf80c1075b767f947</td>
+                    </tr>
+                    <tr>
+                        <td><a href="#debian1364">debian13</a></td>
+                        <td>64</td>
+                        <td><a href="http://files.trendmicro.com/products/deepsecurity/en/20.0/KernelSupport-Debian_13-20.0.3-36180.x86_64.zip">KernelSupport-Debian_13-20.0.3-36180.x86_64.zip</a></td>
+                        <td>b1c58a40913db553428d3fb33db6ebd76602ef7abdea91ddfbae72fb3c059fac</td>
+                    </tr>
+                    <tr>
+                        <td><a href="#rhel964">rhel9</a></td>
+                        <td>64</td>
+                        <td><a href="http://files.trendmicro.com/products/deepsecurity/en/20.0/KernelSupport-RedHat_EL9-20.0.3-36500.x86_64.zip">KernelSupport-RedHat_EL9-20.0.3-36500.x86_64.zip</a></td>
+                        <td>388D3BB4E0C1A5C2B60B5F25E3E3A0E2F0A1D86C22A39D5C8CE6B4AAE1A1F3C2</td>
+                    </tr>
+                    <tr>
+                        <td><a href="#rhel9aarch64">rhel9</a></td>
+                        <td>aarch64</td>
+                        <td><a href="http://files.trendmicro.com/products/deepsecurity/en/20.0/KernelSupport-RedHat_EL9-20.0.3-36000.aarch64.zip">KernelSupport-RedHat_EL9-20.0.3-36000.aarch64.zip</a>&#x2460;</td>
+                        <td>6a0b7e2f2c4d8e1f9a3b5c7d9e1f3a5b7c9d1e3f5a7b9c1d3e5f7a9b1c3d5e7f</td>
+                    </tr>
+                    <tr>
+                        <td><a href="#suse1564">suse15</a></td>
+                        <td>64</td>
+                        <td><a href="http://files.trendmicro.com/products/deepsecurity/en/20.0/KernelSupport-SuSE_15-20.0.3-34630.x86_64.zip">KernelSupport-SuSE_15-20.0.3-34630.x86_64.zip</a></td>
+                        <td>3356392a46be70718d43105330e9bf7d9cae5007f5bcff12b951675dad22a3bc</td>
+                    </tr>
+                    <tr>
+                        <td><a href="#ubuntu2464">ubuntu24</a></td>
+                        <td>64</td>
+                        <td><a href="https://evil.example/KernelSupport-Ubuntu_24.04-20.0.3-36370.x86_64.zip">KernelSupport-Ubuntu_24.04-20.0.3-36370.x86_64.zip</a></td>
+                        <td>16d03a516ae08bc17e632c54570f87ae3005c56c17edec5cbe3114e436c87abe</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="row justify-content-start">
+        <h2 id="Debian">Debian Kernels</h2>
+            <div class="col-4">
+                <h3>debian13 (64-bit)</h3>
+                <table class="table table-responsive table-hover">
+                    <thead>
+                        <tr>
+                            <th scope="col" class="clickable" data-toggle="collapse" data-target="#debian1364">
+                                <svg viewBox="0 0 16 16" width="16" height="16"><path d="M8 1 L8 15 M1 8 L15 8" /></svg>
+                                &nbsp;Version
+                            </th>
+                            <th>cloud</th>
+                            <th>default</th>
+                        </tr>
+                    </thead>
+                    <tbody id="debian1364" class="collapse show">
+                        <tr>
+                            <td>6.12.38+deb13-amd64</td>
+                            <td id="cloud"></td>
+                            <td id="default">Y</td>
+                        </tr>
+                        <tr>
+                            <td>6.12.38+deb13-cloud-amd64</td>
+                            <td id="cloud">Y</td>
+                            <td id="default"></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+    </div>
+
+    <div class="row justify-content-start">
+        <h2 id="Red Hat Enterprise Linux">Red Hat Enterprise Linux Kernels</h2>
+            <div class="col-4">
+                <h3>rhel8 (64-bit)</h3>
+                <table class="table table-responsive table-hover">
+                    <thead>
+                        <tr><th>&nbsp;Version</th><th>default</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>4.18.0-553.186.1.el8_10.x86_64</td><td id="default">Y</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="col-4">
+                <h3>rhel9 (64-bit)</h3>
+                <table class="table table-responsive table-hover">
+                    <thead>
+                        <tr>
+                            <th scope="col" class="clickable">&nbsp;Version</th>
+                            <th>cloud</th>
+                            <th>default</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rhel964" class="collapse show">
+                        <tr>
+                            <td>5.14.0-70.13.1.el9_0.x86_64</td>
+                            <td id="cloud"></td>
+                            <td id="default">Y</td>
+                        </tr>
+                        <tr>
+                            <td>5.14.0-611.5.1.el9_7.x86_64</td>
+                            <td id="cloud"></td>
+                            <td id="default">&Delta;</td>
+                        </tr>
+                        <tr>
+                            <td>5.14.0-611.5.1.el9_7.x86_64+cloud</td>
+                            <td id="cloud">Y</td>
+                            <td id="default"></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="col-4">
+                <h3>rhel9 (aarch64-bit)</h3>
+                <table class="table table-responsive table-hover">
+                    <thead>
+                        <tr><th>Version</th><th>default</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>5.14.0-70.13.1.el9_0.aarch64</td><td id="default">Y</td></tr>
+                    </tbody>
+                </table>
+            </div>
+    </div>
+
+    <div class="row justify-content-start">
+        <h2 id="SuSE">SuSE Kernels</h2>
+            <div class="col-4">
+                <h3>suse15 (64-bit)</h3>
+                <table class="table table-responsive table-hover">
+                    <thead>
+                        <tr><th>Version</th><th>azure</th><th>default</th><th>preempt</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>5.14.21-150500.33.69-azure</td><td id="azure">Y</td><td id="default"></td><td id="preempt"></td></tr>
+                        <tr><td>6.4.0-150700.53.31-default</td><td id="azure"></td><td id="default">Y</td><td id="preempt"></td></tr>
+                        <tr>
+                            <td>
+                                <details>
+                                  <summary>5.3.18-24.61</summary>
+                                  <div>5.3.18-24.61-default</div>
+                                  <div>5.3.18-24.61-preempt</div>
+                                </details>
+                            </td>
+                            <td id="azure"></td>
+                            <td id="default">Y</td>
+                            <td id="preempt">Y</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="col-4">
+                <h3>suse12 (64-bit)</h3>
+                <table class="table table-responsive table-hover">
+                    <thead>
+                        <tr><th>Version</th><th>default</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>4.12.14-122.274-default</td><td id="default">Y</td></tr>
+                    </tbody>
+                </table>
+            </div>
+    </div>
+
+    <div class="row justify-content-start">
+        <h2 id="Ubuntu">Ubuntu Kernels</h2>
+            <div class="col-4">
+                <h3>ubuntu24 (64-bit)</h3>
+                <table class="table table-responsive table-hover">
+                    <thead>
+                        <tr><th>Version</th><th>aws</th><th>azure</th><th>generic</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>6.8.0-31-generic</td><td id="aws"></td><td id="azure"></td><td id="generic">Y</td></tr>
+                        <tr><td>6.8.0-1068-azure</td><td id="aws"></td><td id="azure">Y</td><td id="generic"></td></tr>
+                        <tr>
+                            <td>
+                                <details>
+                                  <summary>6.17.0-1015</summary>
+                                  <div>6.17.0-1015-azure</div>
+                                  <div>6.17.0-1015-aws</div>
+                                </details>
+                            </td>
+                            <td id="aws">Y</td>
+                            <td id="azure">Y</td>
+                            <td id="generic"></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+    </div>
+    <script type="text/javascript">
+        function searchKernel() { return "<table><tr><td>not a kernel</td></tr></table>"; }
+    </script>
+</body>
+</html>
