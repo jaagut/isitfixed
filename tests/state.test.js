@@ -306,3 +306,15 @@ test('persistent storage is requested only when not yet granted and failures are
     false,
   );
 });
+
+test('defaults select the newest release of every OS', () => {
+  assert.deepEqual(defaultState().products, [
+    'rhel10',
+    'debian13',
+    'sles16',
+    'windows11',
+    'server2025',
+    'ubuntu2604',
+    'alpine324',
+  ]);
+});
