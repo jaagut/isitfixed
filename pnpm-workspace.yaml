@@ -1,4 +1,7 @@
 minimumReleaseAge: 2880
 # esbuild works from its platform package; its postinstall script is not needed.
+# pnpm is a devDependency only so Dependabot bumps the version that CI and the Dockerfile read;
+# its install scripts are not needed for that.
 allowBuilds:
   esbuild: false
+  pnpm: false
